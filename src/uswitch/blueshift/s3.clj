@@ -40,18 +40,20 @@
                  (cons (first work) result))))
       result)))
 
-
-
 (defn close-channels [state & ks]
   (doseq [k ks]
     (when-let [ch (get state k)]
       (close! ch)))
   (apply dissoc state ks))
 
+(defn read-edn [stream]
+  (edn/read (PushbackReader. (InputStreamReader. stream))))
+
 (defn manifest [credentials bucket files]
-  (when-let [manifest-file-key (:key (first (filter #(re-matches #".*manifest\.edn$" (:key %))
-                                                    files)))]
-    (edn/read (PushbackReader. (InputStreamReader. (:content (get-object credentials bucket manifest-file-key)))))))
+  (letfn [(manifest? [{:keys [key]}]
+            (re-matches #".*manifest\.edn$" key))]
+    (when-let [manifest-file-key (:key (first (filter manifest? files)))]
+      (read-edn (:content (get-object credentials bucket manifest-file-key))))))
 
 (defrecord Watcher [credentials bucket directory]
   Lifecycle
@@ -60,12 +62,14 @@
     (go-loop []
       (let [fs (files credentials bucket directory)]
         (when-let [manifest (manifest credentials bucket fs)]
-          (info "Watcher found import manifest:" manifest))))
+          (let [pattern    (re-pattern (:data-pattern manifest))
+                data-files (filter (fn [{:keys [key]}] (re-matches pattern key)) fs)]
+            (info "Watcher found import manifest:" manifest)
+            (info "Importing:" (map :key data-files))))))
     this)
   (stop [this]
     (info "Stopping Watcher for" (str bucket "/" directory))
     this))
-
 
 
 (defn spawn-watcher! [credentials bucket directory]
