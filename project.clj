@@ -1,6 +1,15 @@
 (defproject blueshift "0.1.0-SNAPSHOT"
-  :description "FIXME: write description"
-  :url "http://example.com/FIXME"
+  :description "Automate importing S3 data into Amazon Redshift"
+  :url "https://github.com/uswitch/blueshift"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
-  :dependencies [[org.clojure/clojure "1.5.1"]])
+  :dependencies [[org.clojure/clojure "1.6.0"]
+                 [org.clojure/tools.logging "0.2.6"]
+                 [com.stuartsierra/component "0.2.1"]
+                 [org.clojure/core.async "0.1.303.0-886421-alpha"]
+                 [org.clojure/tools.cli "0.3.1"]
+                 [clj-aws-s3 "0.3.9"]]
+  :profiles {:dev {:dependencies [[org.slf4j/slf4j-simple "1.7.7"]
+                                  [org.clojure/tools.namespace "0.2.3"]]
+                   :source-paths ["./dev"]}}
+  :main uswitch.blueshift.main)
