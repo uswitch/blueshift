@@ -1,20 +1,25 @@
 (ns uswitch.blueshift.s3
   (:require [com.stuartsierra.component :refer (Lifecycle system-map using start stop)]
             [clojure.tools.logging :refer (info error)]
-            [aws.sdk.s3 :refer (list-objects)]
+            [aws.sdk.s3 :refer (list-objects get-object)]
             [clojure.set :refer (difference)]
-            [clojure.core.async :refer (go-loop chan >! <! alts! timeout close!)]))
+            [clojure.core.async :refer (go-loop chan >! <! alts! timeout close!)]
+            [clojure.edn :as edn])
+  (:import [java.io PushbackReader InputStreamReader]))
 
 (defn listing
   [credentials bucket & opts]
   (let [options (apply hash-map opts)]
     (loop [marker   nil
-           results  []]
+           results  nil]
       (let [{:keys [next-marker truncated? objects]}
             (list-objects credentials bucket (assoc options :marker marker))]
         (if (not truncated?)
-          results
+          (concat results objects)
           (recur next-marker (concat results objects)))))))
+
+(defn files [credentials bucket directory]
+  (listing credentials bucket :prefix directory))
 
 (defn directories
   ([credentials bucket]
@@ -43,13 +48,19 @@
       (close! ch)))
   (apply dissoc state ks))
 
+(defn manifest [credentials bucket files]
+  (when-let [manifest-file-key (:key (first (filter #(re-matches #".*manifest\.edn$" (:key %))
+                                                    files)))]
+    (edn/read (PushbackReader. (InputStreamReader. (:content (get-object credentials bucket manifest-file-key)))))))
 
-
-
-(defrecord Watcher [bucket directory]
+(defrecord Watcher [credentials bucket directory]
   Lifecycle
   (start [this]
     (info "Starting Watcher for" (str bucket "/" directory))
+    (go-loop []
+      (let [fs (files credentials bucket directory)]
+        (when-let [manifest (manifest credentials bucket fs)]
+          (info "Watcher found import manifest:" manifest))))
     this)
   (stop [this]
     (info "Stopping Watcher for" (str bucket "/" directory))
@@ -57,8 +68,8 @@
 
 
 
-(defn spawn-watcher! [bucket directory]
-  (doto (Watcher. bucket directory)
+(defn spawn-watcher! [credentials bucket directory]
+  (doto (Watcher. credentials bucket directory)
     (start)))
 
 (defrecord Spawner [poller]
@@ -70,7 +81,7 @@
           watchers (atom nil)]
       (go-loop [dirs (<! ch)]
         (doseq [dir dirs]
-          (swap! watchers conj (spawn-watcher! (:bucket poller) dir)))
+          (swap! watchers conj (spawn-watcher! (:credentials poller) (:bucket poller) dir)))
         (recur (<! ch)))
       (assoc this :watchers watchers)))
   (stop [this]
