@@ -5,12 +5,22 @@
             [clojure.set :refer (difference)]
             [clojure.core.async :refer (go-loop put! chan >!! >! <! alts! timeout close!)]
             [clojure.edn :as edn]
-            [uswitch.blueshift.util :refer (close-channels)])
+            [uswitch.blueshift.util :refer (close-channels)]
+            [schema.core :as s])
   (:import [java.io PushbackReader InputStreamReader]
            [org.apache.http.conn ConnectionPoolTimeoutException]))
 
 
-(defrecord Manifest [table pk-columns columns jdbc-url options data-pattern])
+(s/defrecord Manifest [table :- s/Str
+                       pk-columns :- [s/Str]
+                       columns :- [s/Str]
+                       jdbc-url :- s/Str
+                       options :- s/Any
+                       data-pattern :- s/Str])
+
+(defn validate [manifest]
+  (when-let [error-info (s/check Manifest manifest)]
+    (throw (ex-info "Invalid manifest. Check map for more details." error-info))))
 
 (defn listing
   [credentials bucket & opts]
@@ -52,7 +62,9 @@
   (letfn [(manifest? [{:keys [key]}]
             (re-matches #".*manifest\.edn$" key))]
     (when-let [manifest-file-key (:key (first (filter manifest? files)))]
-      (map->Manifest (read-edn (:content (get-object credentials bucket manifest-file-key)))))))
+      (-> (read-edn (:content (get-object credentials bucket manifest-file-key)))
+          (map->Manifest)
+          (update-in [:data-pattern] re-pattern)))))
 
 (defrecord Watcher [credentials bucket directory redshift-load-ch]
   Lifecycle
@@ -63,8 +75,8 @@
         (try
           (let [fs (files credentials bucket directory)]
             (when-let [manifest (manifest credentials bucket fs)]
-              (let [pattern    (re-pattern (:data-pattern manifest))
-                    data-files (filter (fn [{:keys [key]}] (re-matches pattern key)) fs)]
+              (validate manifest)
+              (let [data-files (filter (fn [{:keys [key]}] (re-matches (:data-pattern manifest) key)) fs)]
                 (when (seq data-files)
                   (info "Watcher triggering import, found import manifest:" manifest)
                   (>!! redshift-load-ch {:table-manifest manifest
