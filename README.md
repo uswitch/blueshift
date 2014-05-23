@@ -27,7 +27,7 @@ Blueshift requires minimal configuration. It will only monitor a single S3 bucke
 
 The S3 credentials are shared by Blueshift for watching for new files and for [Redshift's `COPY` command](http://docs.aws.amazon.com/redshift/latest/dg/t_loading-tables-from-s3.html).
 
-### Building
+### Building & Running
 
 The application is written in Clojure, to build the project you'll need to use [Leiningen](https://github.com/technomancy/leiningen).
 
