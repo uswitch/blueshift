@@ -16,7 +16,7 @@
                        columns :- [s/Str]
                        jdbc-url :- s/Str
                        options :- s/Any
-                       data-pattern :- s/Str])
+                       data-pattern :- s/Regex])
 
 (defn validate [manifest]
   (when-let [error-info (s/check Manifest manifest)]
