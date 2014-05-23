@@ -59,17 +59,24 @@
   Lifecycle
   (start [this]
     (info "Starting Watcher for" (str bucket "/" directory))
-    (go-loop []
-      (let [fs (files credentials bucket directory)]
-        (when-let [manifest (manifest credentials bucket fs)]
-          (let [pattern    (re-pattern (:data-pattern manifest))
-                data-files (filter (fn [{:keys [key]}] (re-matches pattern key)) fs)]
-            (info "Watcher found import manifest:" manifest)
-            (info "Importing:" (map :key data-files))))))
-    this)
+    (let [control-ch (chan)]
+      (go-loop []
+               (try
+                 (let [fs (files credentials bucket directory)]
+                   (when-let [manifest (manifest credentials bucket fs)]
+                     (let [pattern    (re-pattern (:data-pattern manifest))
+                           data-files (filter (fn [{:keys [key]}] (re-matches pattern key)) fs)]
+                       (info "Watcher found import manifest:" manifest)
+                       (info "Importing:" (map :key data-files)))))
+                 (catch Exception e
+                   (error e "Failed reading content of" (str bucket "/" directory))))
+               (let [[_ c] (alts! [control-ch (timeout (* 60 1000))])]
+                 (when (not= c control-ch)
+                   (recur))))
+      (assoc this :control-ch control-ch)))
   (stop [this]
     (info "Stopping Watcher for" (str bucket "/" directory))
-    this))
+    (close-channels this :control-ch)))
 
 
 (defn spawn-watcher! [credentials bucket directory]
