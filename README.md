@@ -74,8 +74,8 @@ Blueshift creates a temporary Amazon Redshift Copy manifest that lists all the d
 
 ## Authors
 
-* [Paul Ingles](https://github.com/pingles)
-* [Thomas Kristensen](https://github.com/tgk)
+* [Paul Ingles](https://github.com/pingles) ([@pingles](http://twitter.com/pingles))
+* [Thomas Kristensen](https://github.com/tgk) ([@tgkristensen](http://twitter.com/tgkristensen))
 
 ## License
 
