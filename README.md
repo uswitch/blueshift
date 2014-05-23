@@ -29,7 +29,7 @@ The S3 credentials are shared by Blueshift for watching for new files and for [R
 
 ### Building & Running
 
-The application is written in Clojure, to build the project you'll need to use [Leiningen](https://github.com/technomancy/leiningen).
+The application is written in [Clojure](http://clojure.org), to build the project you'll need to use [Leiningen](https://github.com/technomancy/leiningen).
 
 If you want to run the application on your computer you can run it directly with Leiningen (providing the path to your configuration file)
 
