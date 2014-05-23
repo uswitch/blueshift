@@ -6,17 +6,18 @@
             [clojure.core.async :refer (go-loop put! chan >!! >! <! alts! timeout close!)]
             [clojure.edn :as edn]
             [uswitch.blueshift.util :refer (close-channels)]
-            [schema.core :as s])
+            [schema.core :as s]
+            [schema.macros :as sm])
   (:import [java.io PushbackReader InputStreamReader]
            [org.apache.http.conn ConnectionPoolTimeoutException]))
 
 
-(s/defrecord Manifest [table :- s/Str
-                       pk-columns :- [s/Str]
-                       columns :- [s/Str]
-                       jdbc-url :- s/Str
-                       options :- s/Any
-                       data-pattern :- s/Regex])
+(sm/defrecord Manifest [table :- s/Str
+                        pk-columns :- [s/Str]
+                        columns :- [s/Str]
+                        jdbc-url :- s/Str
+                        options :- s/Any
+                        data-pattern :- s/Regex])
 
 (defn validate [manifest]
   (when-let [error-info (s/check Manifest manifest)]
