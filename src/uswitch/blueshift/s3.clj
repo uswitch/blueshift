@@ -93,13 +93,15 @@
           bucket (:bucket poller)
           watchers (atom nil)]
       (go-loop [dirs (<! ch)]
-        (doseq [dir dirs]
-          (swap! watchers conj (spawn-watcher! (:credentials poller) (:bucket poller) dir redshift-load-ch)))
-        (recur (<! ch)))
+        (when dirs
+          (doseq [dir dirs]
+            (swap! watchers conj (spawn-watcher! (:credentials poller) (:bucket poller) dir redshift-load-ch)))
+          (recur (<! ch))))
       (assoc this :watchers watchers)))
   (stop [this]
     (info "Stopping Spawner")
     (when-let [watchers (:watchers this)]
+      (info "Stopping" (count @watchers) "watchers")
       (doseq [watcher @watchers]
         (stop watcher)))
     (dissoc this :watchers)))

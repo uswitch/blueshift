@@ -2,7 +2,7 @@
   (:require [clojure.tools.logging :refer (info)]
             [clojure.tools.cli :refer (parse-opts)]
             [uswitch.blueshift.system :refer (build-system)]
-            [com.stuartsierra.component :refer (start)])
+            [com.stuartsierra.component :refer (start stop)])
   (:gen-class))
 
 (def cli-options
@@ -11,6 +11,10 @@
     :validate [string?]]
    ["-h" "--help"]])
 
+(defn wait! []
+  (let [s (java.util.concurrent.Semaphore. 0)]
+    (.acquire s)))
+
 (defn -main [& args]
   (let [{:keys [options summary]} (parse-opts args cli-options)]
     (when (:help options)
@@ -18,4 +22,6 @@
       (System/exit 0))
     (let [{:keys [config]} options]
       (info "Starting Blueshift with configuration" config)
-      (start (build-system (read-string (slurp config)))))))
+      (let [system (build-system (read-string (slurp config)))]
+        (start system)
+        (wait!)))))
