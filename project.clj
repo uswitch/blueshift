@@ -19,5 +19,7 @@
                    :source-paths ["./dev"]
                    :jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"
                               "-Dorg.slf4j.simpleLogger.log.org.apache.http=info"
-                              "-Dorg.slf4j.simpleLogger.log.com.amazonaws=info"]}}
+                              "-Dorg.slf4j.simpleLogger.log.com.amazonaws=info"]}
+             :uberjar {:aot [uswitch.blueshift.main]
+                       :dependencies [[ch.qos.logback/logback-classic "1.1.2"]]}}
   :main uswitch.blueshift.main)
