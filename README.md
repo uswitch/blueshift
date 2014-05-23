@@ -55,6 +55,7 @@ Your S3 structure could look like this:
       │       └── 0001.tsv
       │       └── 0002.tsv
       └── directory-b
+          └── manifest.edn
 
 and the `manifest.edn` could look like this:
 
