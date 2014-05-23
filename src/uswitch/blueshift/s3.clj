@@ -1,15 +1,16 @@
 (ns uswitch.blueshift.s3
   (:require [com.stuartsierra.component :refer (Lifecycle system-map using start stop)]
-            [clojure.tools.logging :refer (info error)]
-            [aws.sdk.s3 :refer (list-objects get-object)]
+            [clojure.tools.logging :refer (info error warn)]
+            [aws.sdk.s3 :refer (list-objects get-object delete-object)]
             [clojure.set :refer (difference)]
-            [clojure.core.async :refer (go-loop chan >! <! alts! timeout close!)]
-            [clojure.edn :as edn])
-  (:import [java.io PushbackReader InputStreamReader]))
+            [clojure.core.async :refer (go-loop put! chan >!! >! <! alts! timeout close!)]
+            [clojure.edn :as edn]
+            [uswitch.blueshift.util :refer (close-channels)])
+  (:import [java.io PushbackReader InputStreamReader]
+           [org.apache.http.conn ConnectionPoolTimeoutException]))
 
 
 (defrecord Manifest [table pk-columns columns jdbc-url options data-pattern])
-
 
 (defn listing
   [credentials bucket & opts]
@@ -44,12 +45,6 @@
                  (cons (first work) result))))
       result)))
 
-(defn close-channels [state & ks]
-  (doseq [k ks]
-    (when-let [ch (get state k)]
-      (close! ch)))
-  (apply dissoc state ks))
-
 (defn read-edn [stream]
   (edn/read (PushbackReader. (InputStreamReader. stream))))
 
@@ -59,35 +54,38 @@
     (when-let [manifest-file-key (:key (first (filter manifest? files)))]
       (map->Manifest (read-edn (:content (get-object credentials bucket manifest-file-key)))))))
 
-(defrecord Watcher [credentials bucket directory]
+(defrecord Watcher [credentials bucket directory redshift-load-ch]
   Lifecycle
   (start [this]
     (info "Starting Watcher for" (str bucket "/" directory))
     (let [control-ch (chan)]
       (go-loop []
-               (try
-                 (let [fs (files credentials bucket directory)]
-                   (when-let [manifest (manifest credentials bucket fs)]
-                     (let [pattern    (re-pattern (:data-pattern manifest))
-                           data-files (filter (fn [{:keys [key]}] (re-matches pattern key)) fs)]
-                       (info "Watcher found import manifest:" manifest)
-                       (info "Importing:" (map :key data-files)))))
-                 (catch Exception e
-                   (error e "Failed reading content of" (str bucket "/" directory))))
-               (let [[_ c] (alts! [control-ch (timeout (* 60 1000))])]
-                 (when (not= c control-ch)
-                   (recur))))
-      (assoc this :control-ch control-ch)))
+        (try
+          (let [fs (files credentials bucket directory)]
+            (when-let [manifest (manifest credentials bucket fs)]
+              (let [pattern    (re-pattern (:data-pattern manifest))
+                    data-files (filter (fn [{:keys [key]}] (re-matches pattern key)) fs)]
+                (when (seq data-files)
+                  (info "Watcher triggering import, found import manifest:" manifest)
+                  (>!! redshift-load-ch {:table-manifest manifest
+                                         :files          (map :key data-files)})))))
+          (catch ConnectionPoolTimeoutException e
+            (warn e "Connection timed out. Will re-try in 60 seconds."))
+          (catch Exception e
+            (error e "Failed reading content of" (str bucket "/" directory))))
+        (let [[_ c] (alts! [control-ch (timeout (* 60 1000))])]
+          (when (not= c control-ch)
+            (recur))))
+      (assoc this :watcher-control-ch control-ch)))
   (stop [this]
     (info "Stopping Watcher for" (str bucket "/" directory))
-    (close-channels this :control-ch)))
+    (close-channels this :watcher-control-ch)))
 
 
-(defn spawn-watcher! [credentials bucket directory]
-  (doto (Watcher. credentials bucket directory)
-    (start)))
+(defn spawn-watcher! [credentials bucket directory redshift-load-ch]
+  (start (Watcher. credentials bucket directory redshift-load-ch)))
 
-(defrecord Spawner [poller]
+(defrecord Spawner [poller redshift-load-ch]
   Lifecycle
   (start [this]
     (info "Starting Spawner")
@@ -96,13 +94,14 @@
           watchers (atom nil)]
       (go-loop [dirs (<! ch)]
         (doseq [dir dirs]
-          (swap! watchers conj (spawn-watcher! (:credentials poller) (:bucket poller) dir)))
+          (swap! watchers conj (spawn-watcher! (:credentials poller) (:bucket poller) dir redshift-load-ch)))
         (recur (<! ch)))
       (assoc this :watchers watchers)))
   (stop [this]
     (info "Stopping Spawner")
     (when-let [watchers (:watchers this)]
-      (doseq [watcher @watchers] (stop watcher)))
+      (doseq [watcher @watchers]
+        (stop watcher)))
     (dissoc this :watchers)))
 
 (defn spawner []
@@ -118,7 +117,7 @@
         (let [available-dirs (set (leaf-directories credentials bucket))
               new-dirs       (difference available-dirs dirs)]
           (when (seq new-dirs)
-            (info "New directories:" new-dirs "spawning watchers")
+            (info "New directories:" new-dirs "spawning" (count new-dirs) "watchers")
             (>! new-directories-ch new-dirs))
           (let [[v c] (alts! [(timeout (* 1000 poll-interval-seconds)) control-ch])]
             (when-not (= c control-ch)
@@ -134,6 +133,27 @@
   (map->Poller {:credentials (-> config :s3 :credentials)
                 :bucket (-> config :s3 :bucket)
                 :poll-interval-seconds (-> config :s3 :poll-interval :seconds)}))
+
+
+
+(defrecord Cleaner [credentials bucket cleaner-ch]
+  Lifecycle
+  (start [this]
+    (info "Starting Cleaner")
+    (go-loop []
+      (when-let [m (<! cleaner-ch)]
+        (doseq [key (:files m)]
+          (info "Deleting" (str "s3://" bucket "/" key))
+          (delete-object credentials bucket key))
+        (recur)))
+    this)
+  (stop [this]
+    (info "Stopping Cleaner")
+    this))
+
+(defn cleaner [config]
+  (map->Cleaner {:credentials (-> config :s3 :credentials)
+                 :bucket      (-> config :s3 :bucket)}))
 
 
 (defrecord PrintSink [prefix chan-k component]
@@ -154,6 +174,8 @@
 
 
 (defn s3-system [config]
-  (system-map :poller (poller config)
+  (system-map :cleaner (using (cleaner config)
+                              [:cleaner-ch])
+              :poller (poller config)
               :spawner (using (spawner)
-                              [:poller])))
+                              [:poller :redshift-load-ch])))

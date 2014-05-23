@@ -1,8 +1,11 @@
 (ns uswitch.blueshift.redshift
-  (:require [aws.sdk.s3 :refer (put-object)]
+  (:require [aws.sdk.s3 :refer (put-object delete-object)]
             [cheshire.core :refer (generate-string)]
             [clojure.tools.logging :refer (info error debug)]
-            [clojure.string :as s])
+            [clojure.string :as s]
+            [com.stuartsierra.component :refer (system-map Lifecycle using)]
+            [clojure.core.async :refer (chan <! >! close! go-loop)]
+            [uswitch.blueshift.util :refer (close-channels)])
   (:import [java.util UUID]
            [java.sql DriverManager SQLException]))
 
@@ -18,8 +21,8 @@
   (let [file-name (str (UUID/randomUUID) ".manifest")
         s3-url (str "s3://" bucket "/" file-name)]
     (put-object credentials bucket file-name (generate-string manifest))
-    s3-url))
-
+    {:key file-name
+     :url s3-url}))
 
 
 ;; pgsql driver isn't loaded automatically from classpath
@@ -90,3 +93,32 @@
                (delete-target-stmt table staging-table pk-columns)
                (insert-from-staging-stmt table staging-table)
                (drop-table-stmt staging-table)))))
+
+
+
+(defrecord Loader [credentials bucket redshift-load-ch cleaner-ch]
+  Lifecycle
+  (start [this]
+    (info "Starting Redshift Loader")
+    (go-loop [m (<! redshift-load-ch)]
+      (when m
+        (let [{:keys [table-manifest files]} m
+              {:keys [key url]}              (put-manifest credentials bucket (manifest bucket files))]
+          (info "Importing" (count files) "data files to table" (:table table-manifest) "from manifest" url)
+          (load-table credentials url table-manifest)
+          (delete-object credentials bucket key)
+          (>! cleaner-ch {:files files})
+          (info "Finished importing" url))
+        (recur (<! redshift-load-ch))))
+    this)
+  (stop [this]
+    (info "Stopping Redshift Loader")
+    this))
+
+(defn loader [config]
+  (map->Loader {:credentials (-> config :s3 :credentials)
+                :bucket      (-> config :s3 :bucket)}))
+
+(defn redshift-system [config]
+  (system-map :loader (using (loader config)
+                             [:redshift-load-ch :cleaner-ch])))
