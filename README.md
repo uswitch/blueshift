@@ -42,14 +42,44 @@ Alternatively, you can build an Uberjar that you can run:
 
 The uberjar includes [Logback](http://logback.qos.ch/) for logging. `./etc/logback.xml.example` provides a simple starter configuration file with a console appender. 
 
-## License
+## Using
 
-Copyright © 2014 uSwitch Limited.
+Once the service is running you can create any number of directories in the S3 bucket. These will be periodically checked for files and, if found, an import triggered. If you wish the contents of the directory to be imported it's necessary for it to contain a file called `manifest.edn` which is used by Blueshift to know which Redshift cluster to import to and how to interpret the data files.
 
-Distributed under the Eclipse Public License either version 1.0 or (at
-your option) any later version.
+Your S3 structure could look like this:
+
+      bucket
+      ├── directory-a
+      │   └── foo
+      │       └── manifest.edn
+      │       └── 0001.tsv
+      │       └── 0002.tsv
+      └── directory-b
+
+and the `manifest.edn` could look like this:
+
+    {:table        "testing"
+     :pk-columns   ["foo"]
+     :columns      ["foo" "bar"]
+     :jdbc-url     "jdbc:postgresql://foo.eu-west-1.redshift.amazonaws.com:5439/db?tcpKeepAlive=true&user=user&password=pwd"
+     :options      ["DELIMITER '\\t'" "IGNOREHEADER 1" "ESCAPE" "TRIMBLANKS"]
+     :data-pattern ".*tsv$"}
+
+When a manifest and data files are found an import is triggered. Once the import has been successfully committed Blueshift will **delete** any data files that were imported; the manifest remains ready for new data files to be  imported.
+
+It's important that `:columns` lists all the columns (and only the columns) included within the data file and that they are in the same order. `:pk-columns` must contain a uniquely identifying primary key to ensure the correct upsert behaviour. `:options` can be used to override the Redshift copy options used during the load.
+
+Blueshift creates a temporary Amazon Redshift Copy manifest that lists all the data files found as mandatory for importing, this also makes it very efficient when loading lots of files into a highly distributed cluster.
 
 ## Authors
 
 * [Paul Ingles](https://github.com/pingles)
 * [Thomas Kristensen](https://github.com/tgk)
+
+## License
+
+Copyright © 2014 [uSwitch.com](http://www.uswitch.com) Limited.
+
+Distributed under the Eclipse Public License either version 1.0 or (at
+your option) any later version.
+
