@@ -8,8 +8,11 @@
                  [com.stuartsierra/component "0.2.1"]
                  [org.clojure/core.async "0.1.303.0-886421-alpha"]
                  [org.clojure/tools.cli "0.3.1"]
-                 [clj-aws-s3 "0.3.9"]]
+                 [clj-aws-s3 "0.3.9"]
+                 [cheshire "5.3.1"]
+                 [postgresql "8.0-318.jdbc3"]]
   :profiles {:dev {:dependencies [[org.slf4j/slf4j-simple "1.7.7"]
                                   [org.clojure/tools.namespace "0.2.3"]]
-                   :source-paths ["./dev"]}}
+                   :source-paths ["./dev"]
+                   :jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"]}}
   :main uswitch.blueshift.main)

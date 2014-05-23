@@ -7,6 +7,10 @@
             [clojure.edn :as edn])
   (:import [java.io PushbackReader InputStreamReader]))
 
+
+(defrecord Manifest [table pk-columns columns jdbc-url options data-pattern])
+
+
 (defn listing
   [credentials bucket & opts]
   (let [options (apply hash-map opts)]
@@ -53,7 +57,7 @@
   (letfn [(manifest? [{:keys [key]}]
             (re-matches #".*manifest\.edn$" key))]
     (when-let [manifest-file-key (:key (first (filter manifest? files)))]
-      (read-edn (:content (get-object credentials bucket manifest-file-key))))))
+      (map->Manifest (read-edn (:content (get-object credentials bucket manifest-file-key)))))))
 
 (defrecord Watcher [credentials bucket directory]
   Lifecycle
