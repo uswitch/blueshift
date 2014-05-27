@@ -1,6 +1,6 @@
 (ns uswitch.blueshift.s3
   (:require [com.stuartsierra.component :refer (Lifecycle system-map using start stop)]
-            [clojure.tools.logging :refer (info error warn)]
+            [clojure.tools.logging :refer (info error warn debug)]
             [aws.sdk.s3 :refer (list-objects get-object delete-object)]
             [clojure.set :refer (difference)]
             [clojure.core.async :refer (go-loop put! chan >!! >! <! alts! timeout close!)]
@@ -81,6 +81,8 @@
               (let [data-files (filter (fn [{:keys [key]}] (re-matches (:data-pattern manifest) key)) fs)]
                 (when (seq data-files)
                   (info "Watcher triggering import, found import manifest:" manifest)
+                  (debug "Triggering load:" {:table-manifest manifest
+                                             :files          (map :key data-files)})
                   (>!! redshift-load-ch {:table-manifest manifest
                                          :files          (map :key data-files)})))))
           (catch clojure.lang.ExceptionInfo e

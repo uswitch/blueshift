@@ -45,7 +45,8 @@
           (.commit *current-connection*)
           (catch SQLException e#
             (error e# "ROLLBACK")
-            (.rollback *current-connection*))
+            (.rollback *current-connection*)
+            (throw e#))
           (finally
             (when-not (.isClosed *current-connection*)
               (.close *current-connection*))))))
@@ -103,11 +104,16 @@
     (go-loop [m (<! redshift-load-ch)]
       (when m
         (let [{:keys [table-manifest files]} m
-              {:keys [key url]}              (put-manifest credentials bucket (manifest bucket files))]
+              redshift-manifest              (manifest bucket files)
+              {:keys [key url]}              (put-manifest credentials bucket redshift-manifest)]
           (info "Importing" (count files) "data files to table" (:table table-manifest) "from manifest" url)
-          (load-table credentials url table-manifest)
-          (delete-object credentials bucket key)
-          (>! cleaner-ch {:files files})
+          (debug "Importing Redshift Manifest" redshift-manifest)
+          (try (load-table credentials url table-manifest)
+               (>! cleaner-ch {:files files})
+               (catch java.sql.SQLException e
+                 (error e "Error loading into" (:table table-manifest)))
+               (finally
+                 (delete-object credentials bucket key)))
           (info "Finished importing" url))
         (recur (<! redshift-load-ch))))
     this)
