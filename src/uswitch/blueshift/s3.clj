@@ -63,9 +63,10 @@
   (letfn [(manifest? [{:keys [key]}]
             (re-matches #".*manifest\.edn$" key))]
     (when-let [manifest-file-key (:key (first (filter manifest? files)))]
-      (-> (read-edn (:content (get-object credentials bucket manifest-file-key)))
-          (map->Manifest)
-          (update-in [:data-pattern] re-pattern)))))
+      (with-open [content (:content (get-object credentials bucket manifest-file-key))]
+        (-> (read-edn content)
+            (map->Manifest)
+            (update-in [:data-pattern] re-pattern))))))
 
 (defrecord KeyWatcher [credentials bucket directory redshift-load-ch poll-interval-seconds]
   Lifecycle
