@@ -67,10 +67,10 @@
           (map->Manifest)
           (update-in [:data-pattern] re-pattern)))))
 
-(defrecord Watcher [credentials bucket directory redshift-load-ch]
+(defrecord KeyWatcher [credentials bucket directory redshift-load-ch]
   Lifecycle
   (start [this]
-    (info "Starting Watcher for" (str bucket "/" directory))
+    (info "Starting KeyWatcher for" (str bucket "/" directory))
     (let [control-ch (chan)]
       (go-loop []
         (try
@@ -91,41 +91,41 @@
             (recur))))
       (assoc this :watcher-control-ch control-ch)))
   (stop [this]
-    (info "Stopping Watcher for" (str bucket "/" directory))
+    (info "Stopping KeyWatcher for" (str bucket "/" directory))
     (close-channels this :watcher-control-ch)))
 
 
-(defn spawn-watcher! [credentials bucket directory redshift-load-ch]
-  (start (Watcher. credentials bucket directory redshift-load-ch)))
+(defn spawn-key-watcher! [credentials bucket directory redshift-load-ch]
+  (start (KeyWatcher. credentials bucket directory redshift-load-ch)))
 
-(defrecord Spawner [poller redshift-load-ch]
+(defrecord KeyWatcherSpawner [bucket-watcher redshift-load-ch]
   Lifecycle
   (start [this]
-    (info "Starting Spawner")
-    (let [ch (:new-directories-ch poller)
-          bucket (:bucket poller)
+    (info "Starting KeyWatcherSpawner")
+    (let [ch (:new-directories-ch bucket-watcher)
+          bucket (:bucket bucket-watcher)
           watchers (atom nil)]
       (go-loop [dirs (<! ch)]
         (when dirs
           (doseq [dir dirs]
-            (swap! watchers conj (spawn-watcher! (:credentials poller) (:bucket poller) dir redshift-load-ch)))
+            (swap! watchers conj (spawn-key-watcher! (:credentials bucket-watcher) (:bucket bucket-watcher) dir redshift-load-ch)))
           (recur (<! ch))))
       (assoc this :watchers watchers)))
   (stop [this]
-    (info "Stopping Spawner")
+    (info "Stopping KeyWatcherSpawner")
     (when-let [watchers (:watchers this)]
       (info "Stopping" (count @watchers) "watchers")
       (doseq [watcher @watchers]
         (stop watcher)))
     (dissoc this :watchers)))
 
-(defn spawner []
-  (map->Spawner {}))
+(defn key-watcher-spawner []
+  (map->KeyWatcherSpawner {}))
 
-(defrecord Poller [credentials bucket poll-interval-seconds]
+(defrecord BucketWatcher [credentials bucket poll-interval-seconds]
   Lifecycle
   (start [this]
-    (info "Starting S3 Poller. Polling" bucket "every" poll-interval-seconds "seconds")
+    (info "Starting BucketWatcher. Polling" bucket "every" poll-interval-seconds "seconds")
     (let [new-directories-ch (chan)
           control-ch         (chan)]
       (go-loop [dirs nil]
@@ -139,16 +139,15 @@
               (recur available-dirs)))))
       (assoc this :control-ch control-ch :new-directories-ch new-directories-ch)))
   (stop [this]
-    (info "Stopping S3 Poller")
+    (info "Stopping BucketWatcher")
     (close-channels this :control-ch :new-directories-ch)))
 
-(defn poller
+(defn bucket-watcher
   "Creates a process watching for objects in S3 buckets."
   [config]
-  (map->Poller {:credentials (-> config :s3 :credentials)
-                :bucket (-> config :s3 :bucket)
-                :poll-interval-seconds (-> config :s3 :poll-interval :seconds)}))
-
+  (map->BucketWatcher {:credentials (-> config :s3 :credentials)
+                       :bucket (-> config :s3 :bucket)
+                       :poll-interval-seconds (-> config :s3 :poll-interval :seconds)}))
 
 
 (defrecord Cleaner [credentials bucket cleaner-ch]
@@ -191,6 +190,6 @@
 (defn s3-system [config]
   (system-map :cleaner (using (cleaner config)
                               [:cleaner-ch])
-              :poller (poller config)
-              :spawner (using (spawner)
-                              [:poller :redshift-load-ch])))
+              :bucket-watcher (bucket-watcher config)
+              :key-watcher-spawner (using (key-watcher-spawner)
+                                          [:bucket-watcher :redshift-load-ch])))
