@@ -72,6 +72,10 @@ It's important that `:columns` lists all the columns (and only the columns) incl
 
 Blueshift creates a temporary Amazon Redshift Copy manifest that lists all the data files found as mandatory for importing, this also makes it very efficient when loading lots of files into a highly distributed cluster.
 
+## TODO
+
+* Change `KeyWatcher` to identify when directories are deleted, can exit the watcher process and remove from the list of watched directories. If it's added again later can then just create a new process.
+
 ## Authors
 
 * [Paul Ingles](https://github.com/pingles) ([@pingles](http://twitter.com/pingles))
