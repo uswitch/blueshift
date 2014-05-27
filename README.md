@@ -75,6 +75,7 @@ Blueshift creates a temporary Amazon Redshift Copy manifest that lists all the d
 ## TODO
 
 * Change `KeyWatcher` to identify when directories are deleted, can exit the watcher process and remove from the list of watched directories. If it's added again later can then just create a new process.
+* Add safety check when processing data files- ensure that the header line of the TSV file matches the contents of `manifest.edn`
 
 ## Authors
 
