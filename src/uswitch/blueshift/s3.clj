@@ -124,14 +124,16 @@
 (defn key-watcher-spawner [config]
   (map->KeyWatcherSpawner {:poll-interval-seconds (-> config :s3 :poll-interval :seconds)}))
 
-(defrecord BucketWatcher [credentials bucket poll-interval-seconds]
+(defrecord BucketWatcher [credentials bucket key-pattern poll-interval-seconds]
   Lifecycle
   (start [this]
     (info "Starting BucketWatcher. Polling" bucket "every" poll-interval-seconds "seconds")
     (let [new-directories-ch (chan)
           control-ch         (chan)]
       (go-loop [dirs nil]
-        (let [available-dirs (set (leaf-directories credentials bucket))
+        (let [available-dirs (->> (leaf-directories credentials bucket)
+                                  (filter #(re-matches key-pattern %))
+                                  (set))
               new-dirs       (difference available-dirs dirs)]
           (when (seq new-dirs)
             (info "New directories:" new-dirs "spawning" (count new-dirs) "watchers")
@@ -149,8 +151,9 @@
   [config]
   (map->BucketWatcher {:credentials (-> config :s3 :credentials)
                        :bucket (-> config :s3 :bucket)
-                       :poll-interval-seconds (-> config :s3 :poll-interval :seconds)}))
-
+                       :poll-interval-seconds (-> config :s3 :poll-interval :seconds)
+                       :key-pattern (or (re-pattern (-> config :s3 :key-pattern))
+                                        #".*")}))
 
 (defrecord Cleaner [credentials bucket cleaner-ch]
   Lifecycle
