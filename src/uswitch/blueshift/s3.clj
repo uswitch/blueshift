@@ -83,6 +83,8 @@
                   (info "Watcher triggering import, found import manifest:" manifest)
                   (>!! redshift-load-ch {:table-manifest manifest
                                          :files          (map :key data-files)})))))
+          (catch clojure.lang.ExceptionInfo e
+            (error e "Error with manifest file"))
           (catch ConnectionPoolTimeoutException e
             (warn e "Connection timed out. Will re-try in" poll-interval-seconds "seconds"))
           (catch Exception e
