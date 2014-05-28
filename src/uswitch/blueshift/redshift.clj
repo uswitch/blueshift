@@ -6,7 +6,8 @@
             [com.stuartsierra.component :refer (system-map Lifecycle using)]
             [clojure.core.async :refer (chan <! >! close! go-loop)]
             [uswitch.blueshift.util :refer (close-channels)]
-            [metrics.meters :refer (mark! meter)])
+            [metrics.meters :refer (mark! meter)]
+            [metrics.counters :refer (inc! dec! counter)])
   (:import [java.util UUID]
            [java.sql DriverManager SQLException]))
 
@@ -102,7 +103,7 @@
                (insert-from-staging-stmt table staging-table)
                (drop-table-stmt staging-table)))))
 
-
+(def importing-files (counter [(str *ns*) "importing-files" "files"]))
 
 (defrecord Loader [credentials bucket redshift-load-ch cleaner-ch]
   Lifecycle
@@ -113,8 +114,10 @@
         (let [{:keys [table-manifest files]} m
               redshift-manifest              (manifest bucket files)
               {:keys [key url]}              (put-manifest credentials bucket redshift-manifest)]
+
           (info "Importing" (count files) "data files to table" (:table table-manifest) "from manifest" url)
           (debug "Importing Redshift Manifest" redshift-manifest)
+          (inc! importing-files (count files))
           (try (load-table credentials url table-manifest)
                (>! cleaner-ch {:files files})
                (catch java.sql.SQLException e
