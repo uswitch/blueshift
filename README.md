@@ -102,6 +102,7 @@ Obviously for a production deployment you'd probably want to automate this with 
 
 ## TODO
 
+* Add exception handling when cleaning uploaded files from S3
 * Change `KeyWatcher` to identify when directories are deleted, can exit the watcher process and remove from the list of watched directories. If it's added again later can then just create a new process.
 * Add safety check when processing data files- ensure that the header line of the TSV file matches the contents of `manifest.edn`
 
