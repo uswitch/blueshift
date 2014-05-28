@@ -21,4 +21,4 @@
               :redshift-system (using (redshift-system config)
                                       [:redshift-load-ch :cleaner-ch])
               :cleaner-ch (chan 100)
-              :telemetry-system (telemetry-system)))
+              :telemetry-system (telemetry-system config)))
