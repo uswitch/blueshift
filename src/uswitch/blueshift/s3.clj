@@ -7,10 +7,10 @@
             [clojure.edn :as edn]
             [uswitch.blueshift.util :refer (close-channels)]
             [schema.core :as s]
-            [schema.macros :as sm])
+            [schema.macros :as sm]
+            [metrics.counters :refer (counter inc! dec!)])
   (:import [java.io PushbackReader InputStreamReader]
            [org.apache.http.conn ConnectionPoolTimeoutException]))
-
 
 (sm/defrecord Manifest [table :- s/Str
                         pk-columns :- [s/Str]
@@ -78,13 +78,13 @@
           (let [fs (files credentials bucket directory)]
             (when-let [manifest (manifest credentials bucket fs)]
               (validate manifest)
-              (let [data-files (filter (fn [{:keys [key]}] (re-matches (:data-pattern manifest) key)) fs)]
+              (let [data-files (filter (fn [{:keys [key]}] (re-matches (:data-pattern manifest) key)) fs)
+                    load       {:table-manifest manifest
+                                :files          (map :key data-files)}]
                 (when (seq data-files)
-                  (info "Watcher triggering import, found import manifest:" manifest)
-                  (debug "Triggering load:" {:table-manifest manifest
-                                             :files          (map :key data-files)})
-                  (>!! redshift-load-ch {:table-manifest manifest
-                                         :files          (map :key data-files)})))))
+                  (info "Watcher triggering import" (:table manifest))
+                  (debug "Triggering load:" load)
+                  (>!! redshift-load-ch load)))))
           (catch clojure.lang.ExceptionInfo e
             (error e "Error with manifest file"))
           (catch ConnectionPoolTimeoutException e
@@ -103,6 +103,8 @@
 (defn spawn-key-watcher! [credentials bucket directory redshift-load-ch poll-interval-seconds]
   (start (KeyWatcher. credentials bucket directory redshift-load-ch poll-interval-seconds)))
 
+(def directories-watched (counter [(str *ns*) "directories-watched" "directories"]))
+
 (defrecord KeyWatcherSpawner [bucket-watcher redshift-load-ch poll-interval-seconds]
   Lifecycle
   (start [this]
@@ -112,7 +114,8 @@
       (go-loop [dirs (<! new-directories-ch)]
         (when dirs
           (doseq [dir dirs]
-            (swap! watchers conj (spawn-key-watcher! credentials bucket dir redshift-load-ch poll-interval-seconds)))
+            (swap! watchers conj (spawn-key-watcher! credentials bucket dir redshift-load-ch poll-interval-seconds))
+            (inc! directories-watched))
           (recur (<! new-directories-ch))))
       (assoc this :watchers watchers)))
   (stop [this]
@@ -120,7 +123,8 @@
     (when-let [watchers (:watchers this)]
       (info "Stopping" (count @watchers) "watchers")
       (doseq [watcher @watchers]
-        (stop watcher)))
+        (stop watcher)
+        (dec! directories-watched)))
     (dissoc this :watchers)))
 
 (defn key-watcher-spawner [config]
@@ -129,7 +133,7 @@
 (defrecord BucketWatcher [credentials bucket key-pattern poll-interval-seconds]
   Lifecycle
   (start [this]
-    (info "Starting BucketWatcher. Polling" bucket "every" poll-interval-seconds "seconds")
+    (info "Starting BucketWatcher. Polling" bucket "every" poll-interval-seconds "seconds for keys matching" key-pattern)
     (let [new-directories-ch (chan)
           control-ch         (chan)]
       (go-loop [dirs nil]

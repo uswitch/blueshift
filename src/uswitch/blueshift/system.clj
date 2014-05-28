@@ -1,7 +1,8 @@
 (ns uswitch.blueshift.system
   (:require [uswitch.blueshift.s3 :refer (s3-system)]
             [uswitch.blueshift.redshift :refer (redshift-system)]
-            [com.stuartsierra.component :refer (system-map using Lifecycle)]
+            [uswitch.blueshift.telemetry :refer (telemetry-system)]
+            [com.stuartsierra.component :refer (system-map using Lifecycle start)]
             [clojure.core.async :refer (chan close!)])
   (:import [clojure.core.async.impl.channels ManyToManyChannel]))
 
@@ -19,4 +20,5 @@
               :redshift-load-ch (chan 100)
               :redshift-system (using (redshift-system config)
                                       [:redshift-load-ch :cleaner-ch])
-              :cleaner-ch (chan 100)))
+              :cleaner-ch (chan 100)
+              :telemetry-system (telemetry-system)))

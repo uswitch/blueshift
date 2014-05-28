@@ -5,7 +5,8 @@
             [clojure.string :as s]
             [com.stuartsierra.component :refer (system-map Lifecycle using)]
             [clojure.core.async :refer (chan <! >! close! go-loop)]
-            [uswitch.blueshift.util :refer (close-channels)])
+            [uswitch.blueshift.util :refer (close-channels)]
+            [metrics.meters :refer (mark! meter)])
   (:import [java.util UUID]
            [java.sql DriverManager SQLException]))
 
@@ -24,6 +25,9 @@
     {:key file-name
      :url s3-url}))
 
+(def redshift-imports (meter [(str *ns*) "redshift-imports" "imports"]))
+(def redshift-import-rollbacks (meter [(str *ns*) "redshift-imports" "rollbacks"]))
+(def redshift-import-commits (meter [(str *ns*) "redshift-imports" "commits"]))
 
 ;; pgsql driver isn't loaded automatically from classpath
 (Class/forName "org.postgresql.Driver")
@@ -43,8 +47,10 @@
      (try ~@body
           (debug "COMMIT")
           (.commit *current-connection*)
+          (mark! redshift-import-commits)
           (catch SQLException e#
             (error e# "ROLLBACK")
+            (mark! redshift-import-rollbacks)
             (.rollback *current-connection*)
             (throw e#))
           (finally
@@ -88,6 +94,7 @@
 (defn load-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns] :as table-manifest}]
   (let [staging-table (str table "_staging")]
     (debug "Connecting to" jdbc-url)
+    (mark! redshift-imports)
     (with-connection jdbc-url
       (execute (create-staging-table-stmt table staging-table)
                (copy-from-s3-stmt staging-table redshift-manifest-url credentials table-manifest)

@@ -72,6 +72,16 @@ It's important that `:columns` lists all the columns (and only the columns) incl
 
 Blueshift creates a temporary Amazon Redshift Copy manifest that lists all the data files found as mandatory for importing, this also makes it very efficient when loading lots of files into a highly distributed cluster.
 
+## Metrics
+Blueshift tracks a few metrics using [https://github.com/sjl/metrics-clojure](https://github.com/sjl/metrics-clojure). Currently these are logged to the Slf4j logger.
+
+Starting the app will (eventually) show something like this:
+
+    [metrics-logger-reporter-thread-1] INFO user - type=COUNTER, name=uswitch.blueshift.s3.directories-watched.directories, count=0
+    [metrics-logger-reporter-thread-1] INFO user - type=METER, name=uswitch.blueshift.redshift.redshift-imports.commits, count=0, mean_rate=0.0, m1=0.0, m5=0.0, m15=0.0, rate_unit=events/second
+    [metrics-logger-reporter-thread-1] INFO user - type=METER, name=uswitch.blueshift.redshift.redshift-imports.imports, count=0, mean_rate=0.0, m1=0.0, m5=0.0, m15=0.0, rate_unit=events/second
+    [metrics-logger-reporter-thread-1] INFO user - type=METER, name=uswitch.blueshift.redshift.redshift-imports.rollbacks, count=0, mean_rate=0.0, m1=0.0, m5=0.0, m15=0.0, rate_unit=events/second
+
 ## TODO
 
 * Change `KeyWatcher` to identify when directories are deleted, can exit the watcher process and remove from the list of watched directories. If it's added again later can then just create a new process.
