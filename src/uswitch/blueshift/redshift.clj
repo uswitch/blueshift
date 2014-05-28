@@ -121,6 +121,7 @@
           (try (load-table credentials url table-manifest)
                (>! cleaner-ch {:files files})
                (dec! importing-files (count files))
+               (info "Successfully imported" (count files) "files")
                (catch java.sql.SQLException e
                  (error e "Error loading into" (:table table-manifest)))
                (finally
