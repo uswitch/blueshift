@@ -82,6 +82,24 @@ Starting the app will (eventually) show something like this:
     [metrics-logger-reporter-thread-1] INFO user - type=METER, name=uswitch.blueshift.redshift.redshift-imports.imports, count=0, mean_rate=0.0, m1=0.0, m5=0.0, m15=0.0, rate_unit=events/second
     [metrics-logger-reporter-thread-1] INFO user - type=METER, name=uswitch.blueshift.redshift.redshift-imports.rollbacks, count=0, mean_rate=0.0, m1=0.0, m5=0.0, m15=0.0, rate_unit=events/second
 
+### Riemann Metrics
+Reporting metrics to [Riemann](http://riemann.io/) can be achieved using the [https://github.com/uswitch/blueshift-riemann-metrics](https://github.com/uswitch/blueshift-riemann-metrics) project. To enable support you'll need to build the project:
+
+    $ cd blueshift-riemann-metrics
+    $ lein uberjar
+
+And then change the `./etc/config.edn` to reference the riemann reporter:
+
+    :telemetry {:reporters [uswitch.blueshift.telemetry/log-metrics-reporter
+                            uswitch.blueshift.telemetry.riemann/riemann-metrics-reporter]}
+
+Then, when you've built and run Blueshift, be sure to add the jar to the classpath (the following assumes you're in the blueshift working directory):
+
+    $ cp blueshift-riemann-metrics/target/blueshift-riemann-metrics-0.1.0-standalone.jar ./target
+    $ java -cp "target/*" uswitch.blueshift.main --config ./etc/config.edn
+
+Obviously for a production deployment you'd probably want to automate this with your continuous integration server of choice :)
+
 ## TODO
 
 * Change `KeyWatcher` to identify when directories are deleted, can exit the watcher process and remove from the list of watched directories. If it's added again later can then just create a new process.
