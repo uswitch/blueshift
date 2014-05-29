@@ -120,12 +120,12 @@
           (inc! importing-files (count files))
           (try (load-table credentials url table-manifest)
                (>! cleaner-ch {:files files})
-               (dec! importing-files (count files))
                (info "Successfully imported" (count files) "files")
                (catch java.sql.SQLException e
                  (error e "Error loading into" (:table table-manifest)))
                (finally
-                 (delete-object credentials bucket key)))
+                 (delete-object credentials bucket key)
+                 (dec! importing-files (count files))))
           (info "Finished importing" url))
         (recur (<! redshift-load-ch))))
     this)
