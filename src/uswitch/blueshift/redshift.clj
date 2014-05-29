@@ -122,7 +122,8 @@
                (>! cleaner-ch {:files files})
                (info "Successfully imported" (count files) "files")
                (catch java.sql.SQLException e
-                 (error e "Error loading into" (:table table-manifest)))
+                 (error e "Error loading into" (:table table-manifest))
+                 (error (:table table-manifest) "Redshift manifest content:" redshift-manifest))
                (finally
                  (delete-object credentials bucket key)
                  (dec! importing-files (count files))))
