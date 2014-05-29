@@ -22,10 +22,12 @@ Blueshift requires minimal configuration. It will only monitor a single S3 bucke
 {:s3 {:credentials   {:access-key ""
                       :secret-key ""}
       :bucket        "blueshift-data"
-      :poll-interval {:seconds 30}}}
+      :key-pattern   ".*"
+      :poll-interval {:seconds 30}}
+ :telemetry {:reporters [uswitch.blueshift.telemetry/log-metrics-reporter]}}
 ```
 
-The S3 credentials are shared by Blueshift for watching for new files and for [Redshift's `COPY` command](http://docs.aws.amazon.com/redshift/latest/dg/t_loading-tables-from-s3.html).
+The S3 credentials are shared by Blueshift for watching for new files and for [Redshift's `COPY` command](http://docs.aws.amazon.com/redshift/latest/dg/t_loading-tables-from-s3.html). The `:key-pattern` option is used to filter for specific keys (so you can have a single bucket with data from different environments, systems etc.).
 
 ### Building & Running
 
