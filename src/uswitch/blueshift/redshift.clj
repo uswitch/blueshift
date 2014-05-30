@@ -7,7 +7,8 @@
             [clojure.core.async :refer (chan <! >! close! go-loop)]
             [uswitch.blueshift.util :refer (close-channels)]
             [metrics.meters :refer (mark! meter)]
-            [metrics.counters :refer (inc! dec! counter)])
+            [metrics.counters :refer (inc! dec! counter)]
+            [metrics.timers :refer (timer time!)])
   (:import [java.util UUID]
            [java.sql DriverManager SQLException]))
 
@@ -104,6 +105,7 @@
                (drop-table-stmt staging-table)))))
 
 (def importing-files (counter [(str *ns*) "importing-files" "files"]))
+(def import-timer (timer [(str *ns*) "importing-files" "time"]))
 
 (defrecord Loader [credentials bucket redshift-load-ch cleaner-ch]
   Lifecycle
@@ -118,7 +120,8 @@
           (info "Importing" (count files) "data files to table" (:table table-manifest) "from manifest" url)
           (debug "Importing Redshift Manifest" redshift-manifest)
           (inc! importing-files (count files))
-          (try (load-table credentials url table-manifest)
+          (try (time! import-timer
+                      (load-table credentials url table-manifest))
                (>! cleaner-ch {:files files})
                (info "Successfully imported" (count files) "files")
                (catch java.sql.SQLException e
