@@ -78,19 +78,26 @@
           (let [fs (files credentials bucket directory)]
             (when-let [manifest (manifest credentials bucket fs)]
               (validate manifest)
-              (let [data-files (filter (fn [{:keys [key]}] (re-matches (:data-pattern manifest) key)) fs)
-                    load       {:table-manifest manifest
-                                :files          (map :key data-files)}]
+              (let [data-files  (filter (fn [{:keys [key]}]
+                                          (re-matches (:data-pattern manifest) key))
+                                        fs)
+                    complete-ch (chan)
+                    load        {:table-manifest manifest
+                                 :files          (map :key data-files)
+                                 :complete-ch    complete-ch}]
                 (when (seq data-files)
                   (info "Watcher triggering import" (:table manifest))
                   (debug "Triggering load:" load)
-                  (>!! redshift-load-ch load)))))
+                  (>! redshift-load-ch load)
+                  (debug "Waiting for completion")
+                  (<! complete-ch)))))
           (catch clojure.lang.ExceptionInfo e
             (error e "Error with manifest file"))
           (catch ConnectionPoolTimeoutException e
             (warn e "Connection timed out. Will re-try in" poll-interval-seconds "seconds"))
           (catch Exception e
             (error e "Failed reading content of" (str bucket "/" directory))))
+        ;; TODO: The timeout could be adjusted by the time already spent waiting.
         (let [[_ c] (alts! [control-ch (timeout (* poll-interval-seconds 1000))])]
           (when (not= c control-ch)
             (recur))))

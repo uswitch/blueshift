@@ -113,7 +113,7 @@
     (info "Starting Redshift Loader")
     (go-loop [m (<! redshift-load-ch)]
       (when m
-        (let [{:keys [table-manifest files]} m
+        (let [{:keys [table-manifest files complete-ch]} m
               redshift-manifest              (manifest bucket files)
               {:keys [key url]}              (put-manifest credentials bucket redshift-manifest)]
 
@@ -130,7 +130,8 @@
                (finally
                  (delete-object credentials bucket key)
                  (dec! importing-files (count files))))
-          (info "Finished importing" url))
+          (info "Finished importing" url)
+          (close! complete-ch))
         (recur (<! redshift-load-ch))))
     this)
   (stop [this]
