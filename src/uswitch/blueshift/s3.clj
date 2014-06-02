@@ -68,39 +68,49 @@
             (map->Manifest)
             (update-in [:data-pattern] re-pattern))))))
 
+(defn- time-since
+  "Returns a function that returns the number of milliseconds since when
+  this function was invoked."
+  []
+  (let [now (System/currentTimeMillis)]
+    (fn []
+      (- (System/currentTimeMillis) now))))
+
 (defrecord KeyWatcher [credentials bucket directory redshift-load-ch poll-interval-seconds]
   Lifecycle
   (start [this]
     (info "Starting KeyWatcher for" (str bucket "/" directory) "polling every" poll-interval-seconds "seconds")
     (let [control-ch (chan)]
-      (go-loop []
-        (try
-          (let [fs (files credentials bucket directory)]
-            (when-let [manifest (manifest credentials bucket fs)]
-              (validate manifest)
-              (let [data-files  (filter (fn [{:keys [key]}]
-                                          (re-matches (:data-pattern manifest) key))
-                                        fs)
-                    complete-ch (chan)
-                    load        {:table-manifest manifest
-                                 :files          (map :key data-files)
-                                 :complete-ch    complete-ch}]
-                (when (seq data-files)
-                  (info "Watcher triggering import" (:table manifest))
-                  (debug "Triggering load:" load)
-                  (>! redshift-load-ch load)
-                  (debug "Waiting for completion")
-                  (<! complete-ch)))))
-          (catch clojure.lang.ExceptionInfo e
-            (error e "Error with manifest file"))
-          (catch ConnectionPoolTimeoutException e
-            (warn e "Connection timed out. Will re-try in" poll-interval-seconds "seconds"))
-          (catch Exception e
-            (error e "Failed reading content of" (str bucket "/" directory))))
-        ;; TODO: The timeout could be adjusted by the time already spent waiting.
-        (let [[_ c] (alts! [control-ch (timeout (* poll-interval-seconds 1000))])]
-          (when (not= c control-ch)
-            (recur))))
+      (go-loop
+       []
+       (let [elapsed-time (time-since)]
+         (try
+           (let [fs (files credentials bucket directory)]
+             (when-let [manifest (manifest credentials bucket fs)]
+               (validate manifest)
+               (let [data-files  (filter (fn [{:keys [key]}]
+                                           (re-matches (:data-pattern manifest) key))
+                                         fs)
+                     complete-ch (chan)
+                     load        {:table-manifest manifest
+                                  :files          (map :key data-files)
+                                  :complete-ch    complete-ch}]
+                 (when (seq data-files)
+                   (info "Watcher triggering import" (:table manifest))
+                   (debug "Triggering load:" load)
+                   (>! redshift-load-ch load)
+                   (debug "Waiting for completion")
+                   (<! complete-ch)))))
+           (catch clojure.lang.ExceptionInfo e
+             (error e "Error with manifest file"))
+           (catch ConnectionPoolTimeoutException e
+             (warn e "Connection timed out. Will re-try in" poll-interval-seconds "seconds"))
+           (catch Exception e
+             (error e "Failed reading content of" (str bucket "/" directory))))
+         (let [pause-millis (max 0 (- (* poll-interval-seconds 1000) (elapsed-time)))
+               [_ c] (alts! [control-ch (timeout pause-millis)])]
+           (when (not= c control-ch)
+             (recur)))))
       (assoc this :watcher-control-ch control-ch)))
   (stop [this]
     (info "Stopping KeyWatcher for" (str bucket "/" directory))
