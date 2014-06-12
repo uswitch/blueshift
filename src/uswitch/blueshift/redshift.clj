@@ -4,7 +4,7 @@
             [clojure.tools.logging :refer (info error debug)]
             [clojure.string :as s]
             [com.stuartsierra.component :refer (system-map Lifecycle using)]
-            [clojure.core.async :refer (chan <! >! close! go-loop)]
+            [clojure.core.async :refer (chan <!! >!! close! thread)]
             [uswitch.blueshift.util :refer (close-channels)]
             [metrics.meters :refer (mark! meter)]
             [metrics.counters :refer (inc! dec! counter)]
@@ -111,28 +111,29 @@
   Lifecycle
   (start [this]
     (info "Starting Redshift Loader")
-    (go-loop [m (<! redshift-load-ch)]
-      (when m
-        (let [{:keys [table-manifest files complete-ch]} m
-              redshift-manifest              (manifest bucket files)
-              {:keys [key url]}              (put-manifest credentials bucket redshift-manifest)]
+    (thread
+     (loop [m (<!! redshift-load-ch)]
+       (when m
+         (let [{:keys [table-manifest files complete-ch]} m
+               redshift-manifest              (manifest bucket files)
+               {:keys [key url]}              (put-manifest credentials bucket redshift-manifest)]
 
-          (info "Importing" (count files) "data files to table" (:table table-manifest) "from manifest" url)
-          (debug "Importing Redshift Manifest" redshift-manifest)
-          (inc! importing-files (count files))
-          (try (time! import-timer
-                      (load-table credentials url table-manifest))
-               (>! cleaner-ch {:files files})
-               (info "Successfully imported" (count files) "files")
-               (catch java.sql.SQLException e
-                 (error e "Error loading into" (:table table-manifest))
-                 (error (:table table-manifest) "Redshift manifest content:" redshift-manifest))
-               (finally
-                 (delete-object credentials bucket key)
-                 (dec! importing-files (count files))))
-          (info "Finished importing" url)
-          (close! complete-ch))
-        (recur (<! redshift-load-ch))))
+           (info "Importing" (count files) "data files to table" (:table table-manifest) "from manifest" url)
+           (debug "Importing Redshift Manifest" redshift-manifest)
+           (inc! importing-files (count files))
+           (try (time! import-timer
+                       (load-table credentials url table-manifest))
+                (>!! cleaner-ch {:files files})
+                (info "Successfully imported" (count files) "files")
+                (catch java.sql.SQLException e
+                  (error e "Error loading into" (:table table-manifest))
+                  (error (:table table-manifest) "Redshift manifest content:" redshift-manifest))
+                (finally
+                  (delete-object credentials bucket key)
+                  (dec! importing-files (count files))))
+           (info "Finished importing" url)
+           (close! complete-ch))
+         (recur (<!! redshift-load-ch)))))
     this)
   (stop [this]
     (info "Stopping Redshift Loader")
