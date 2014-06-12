@@ -3,7 +3,7 @@
             [clojure.tools.logging :refer (info error warn debug)]
             [aws.sdk.s3 :refer (list-objects get-object delete-object)]
             [clojure.set :refer (difference)]
-            [clojure.core.async :refer (go-loop thread put! chan >!! <!! >! <! alts! timeout close!)]
+            [clojure.core.async :refer (go-loop thread put! chan >!! <!! >! <! alts!! timeout close!)]
             [clojure.edn :as edn]
             [uswitch.blueshift.util :refer (close-channels)]
             [schema.core :as s]
@@ -108,7 +108,7 @@
              (catch Exception e
                (error e "Failed reading content of" (str bucket "/" directory))))
            (let [pause-millis (max 0 (- (* poll-interval-seconds 1000) (elapsed-time)))
-                 [_ c] (alts! [control-ch (timeout pause-millis)])]
+                 [_ c] (alts!! [control-ch (timeout pause-millis)])]
              (when (not= c control-ch)
                (recur))))))
       (assoc this :watcher-control-ch control-ch)))
@@ -162,7 +162,7 @@
            (when (seq new-dirs)
              (info "New directories:" new-dirs "spawning" (count new-dirs) "watchers")
              (>!! new-directories-ch new-dirs))
-           (let [[v c] (alts! [(timeout (* 1000 poll-interval-seconds)) control-ch])]
+           (let [[v c] (alts!! [(timeout (* 1000 poll-interval-seconds)) control-ch])]
              (when-not (= c control-ch)
                (recur available-dirs))))))
       (assoc this :control-ch control-ch :new-directories-ch new-directories-ch)))
