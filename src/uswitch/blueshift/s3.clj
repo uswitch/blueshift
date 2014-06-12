@@ -3,7 +3,7 @@
             [clojure.tools.logging :refer (info error warn debug)]
             [aws.sdk.s3 :refer (list-objects get-object delete-object)]
             [clojure.set :refer (difference)]
-            [clojure.core.async :refer (go-loop put! chan >!! >! <! alts! timeout close!)]
+            [clojure.core.async :refer (go-loop thread put! chan >!! <!! >! <! alts! timeout close!)]
             [clojure.edn :as edn]
             [uswitch.blueshift.util :refer (close-channels)]
             [schema.core :as s]
@@ -81,36 +81,36 @@
   (start [this]
     (info "Starting KeyWatcher for" (str bucket "/" directory) "polling every" poll-interval-seconds "seconds")
     (let [control-ch (chan)]
-      (go-loop
-       []
-       (let [elapsed-time (time-since)]
-         (try
-           (let [fs (files credentials bucket directory)]
-             (when-let [manifest (manifest credentials bucket fs)]
-               (validate manifest)
-               (let [data-files  (filter (fn [{:keys [key]}]
-                                           (re-matches (:data-pattern manifest) key))
-                                         fs)
-                     complete-ch (chan)
-                     load        {:table-manifest manifest
-                                  :files          (map :key data-files)
-                                  :complete-ch    complete-ch}]
-                 (when (seq data-files)
-                   (info "Watcher triggering import" (:table manifest))
-                   (debug "Triggering load:" load)
-                   (>! redshift-load-ch load)
-                   (debug "Waiting for completion")
-                   (<! complete-ch)))))
-           (catch clojure.lang.ExceptionInfo e
-             (error e "Error with manifest file"))
-           (catch ConnectionPoolTimeoutException e
-             (warn e "Connection timed out. Will re-try in" poll-interval-seconds "seconds"))
-           (catch Exception e
-             (error e "Failed reading content of" (str bucket "/" directory))))
-         (let [pause-millis (max 0 (- (* poll-interval-seconds 1000) (elapsed-time)))
-               [_ c] (alts! [control-ch (timeout pause-millis)])]
-           (when (not= c control-ch)
-             (recur)))))
+      (thread
+       (loop []
+         (let [elapsed-time (time-since)]
+           (try
+             (let [fs (files credentials bucket directory)]
+               (when-let [manifest (manifest credentials bucket fs)]
+                 (validate manifest)
+                 (let [data-files  (filter (fn [{:keys [key]}]
+                                             (re-matches (:data-pattern manifest) key))
+                                           fs)
+                       complete-ch (chan)
+                       load        {:table-manifest manifest
+                                    :files          (map :key data-files)
+                                    :complete-ch    complete-ch}]
+                   (when (seq data-files)
+                     (info "Watcher triggering import" (:table manifest))
+                     (debug "Triggering load:" load)
+                     (>!! redshift-load-ch load)
+                     (debug "Waiting for completion")
+                     (<!! complete-ch)))))
+             (catch clojure.lang.ExceptionInfo e
+               (error e "Error with manifest file"))
+             (catch ConnectionPoolTimeoutException e
+               (warn e "Connection timed out. Will re-try in" poll-interval-seconds "seconds"))
+             (catch Exception e
+               (error e "Failed reading content of" (str bucket "/" directory))))
+           (let [pause-millis (max 0 (- (* poll-interval-seconds 1000) (elapsed-time)))
+                 [_ c] (alts! [control-ch (timeout pause-millis)])]
+             (when (not= c control-ch)
+               (recur))))))
       (assoc this :watcher-control-ch control-ch)))
   (stop [this]
     (info "Stopping KeyWatcher for" (str bucket "/" directory))
@@ -153,17 +153,18 @@
     (info "Starting BucketWatcher. Polling" bucket "every" poll-interval-seconds "seconds for keys matching" key-pattern)
     (let [new-directories-ch (chan)
           control-ch         (chan)]
-      (go-loop [dirs nil]
-        (let [available-dirs (->> (leaf-directories credentials bucket)
-                                  (filter #(re-matches key-pattern %))
-                                  (set))
-              new-dirs       (difference available-dirs dirs)]
-          (when (seq new-dirs)
-            (info "New directories:" new-dirs "spawning" (count new-dirs) "watchers")
-            (>! new-directories-ch new-dirs))
-          (let [[v c] (alts! [(timeout (* 1000 poll-interval-seconds)) control-ch])]
-            (when-not (= c control-ch)
-              (recur available-dirs)))))
+      (thread
+       (loop [dirs nil]
+         (let [available-dirs (->> (leaf-directories credentials bucket)
+                                   (filter #(re-matches key-pattern %))
+                                   (set))
+               new-dirs       (difference available-dirs dirs)]
+           (when (seq new-dirs)
+             (info "New directories:" new-dirs "spawning" (count new-dirs) "watchers")
+             (>!! new-directories-ch new-dirs))
+           (let [[v c] (alts! [(timeout (* 1000 poll-interval-seconds)) control-ch])]
+             (when-not (= c control-ch)
+               (recur available-dirs))))))
       (assoc this :control-ch control-ch :new-directories-ch new-directories-ch)))
   (stop [this]
     (info "Stopping BucketWatcher")
@@ -182,12 +183,13 @@
   Lifecycle
   (start [this]
     (info "Starting Cleaner")
-    (go-loop []
-      (when-let [m (<! cleaner-ch)]
-        (doseq [key (:files m)]
-          (info "Deleting" (str "s3://" bucket "/" key))
-          (delete-object credentials bucket key))
-        (recur)))
+    (thread
+     (loop []
+       (when-let [m (<!! cleaner-ch)]
+         (doseq [key (:files m)]
+           (info "Deleting" (str "s3://" bucket "/" key))
+           (delete-object credentials bucket key))
+         (recur))))
     this)
   (stop [this]
     (info "Stopping Cleaner")
