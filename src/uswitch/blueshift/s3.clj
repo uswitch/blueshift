@@ -7,20 +7,22 @@
             [clojure.edn :as edn]
             [uswitch.blueshift.util :refer (close-channels clear-keys)]
             [schema.core :as s]
-            [schema.macros :as sm]
             [metrics.counters :refer (counter inc! dec!)])
   (:import [java.io PushbackReader InputStreamReader]
            [org.apache.http.conn ConnectionPoolTimeoutException]))
 
-(sm/defrecord Manifest [table :- s/Str
-                        pk-columns :- [s/Str]
-                        columns :- [s/Str]
-                        jdbc-url :- s/Str
-                        options :- s/Any
-                        data-pattern :- s/Regex])
+(defrecord Manifest [table pk-columns columns jdbc-url options data-pattern strategy])
+
+(def ManifestSchema {:table        s/Str
+                     :pk-columns   [s/Str]
+                     :columns      [s/Str]
+                     :jdbc-url     s/Str
+                     :strategy     s/Str
+                     :options      s/Any
+                     :data-pattern s/Regex})
 
 (defn validate [manifest]
-  (when-let [error-info (s/check Manifest manifest)]
+  (when-let [error-info (s/check ManifestSchema manifest)]
     (throw (ex-info "Invalid manifest. Check map for more details." error-info))))
 
 (defn listing
@@ -59,6 +61,11 @@
 (defn read-edn [stream]
   (edn/read (PushbackReader. (InputStreamReader. stream))))
 
+(defn assoc-if-nil [record key value]
+  (if (nil? (key record))
+    (assoc record key value)
+    record))
+
 (defn manifest [credentials bucket files]
   (letfn [(manifest? [{:keys [key]}]
             (re-matches #".*manifest\.edn$" key))]
@@ -66,6 +73,7 @@
       (with-open [content (:content (get-object credentials bucket manifest-file-key))]
         (-> (read-edn content)
             (map->Manifest)
+            (assoc-if-nil :strategy "merge")
             (update-in [:data-pattern] re-pattern))))))
 
 (defn- time-since
