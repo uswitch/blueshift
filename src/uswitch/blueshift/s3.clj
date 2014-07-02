@@ -13,22 +13,13 @@
 
 (defrecord Manifest [table pk-columns columns jdbc-url options data-pattern strategy])
 
-(defn assoc-if-nil [record key value]
-  (if (nil? (key record))
-    (assoc record key value)
-    record
-  ))
-
-(def ManifestSchema 
-  {
-    :table                        s/Str
-    :pk-columns                   [s/Str]
-    :columns                      [s/Str]
-    :jdbc-url                     s/Str
-    :strategy                     s/Str
-    :options                      s/Any
-    :data-pattern                 s/Regex
-  })
+(def ManifestSchema {:table        s/Str
+                     :pk-columns   [s/Str]
+                     :columns      [s/Str]
+                     :jdbc-url     s/Str
+                     :strategy     s/Str
+                     :options      s/Any
+                     :data-pattern s/Regex})
 
 (defn validate [manifest]
   (when-let [error-info (s/check ManifestSchema manifest)]
@@ -69,6 +60,11 @@
 
 (defn read-edn [stream]
   (edn/read (PushbackReader. (InputStreamReader. stream))))
+
+(defn assoc-if-nil [record key value]
+  (if (nil? (key record))
+    (assoc record key value)
+    record))
 
 (defn manifest [credentials bucket files]
   (letfn [(manifest? [{:keys [key]}]
