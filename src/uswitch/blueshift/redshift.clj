@@ -65,14 +65,17 @@
                              staging-table
                              target-table)))
 
-(defn copy-from-s3-stmt [staging-table manifest-url {:keys [access-key secret-key] :as creds} {:keys [columns options] :as table-manifest}]
+(defn copy-from-s3-stmt [table manifest-url {:keys [access-key secret-key] :as creds} {:keys [columns options] :as table-manifest}]
   (prepare-statement (format "COPY %s (%s) FROM '%s' CREDENTIALS 'aws_access_key_id=%s;aws_secret_access_key=%s' %s manifest"
-                             staging-table
+                             table
                              (s/join "," columns)
                              manifest-url
                              access-key
                              secret-key
                              (s/join " " options))))
+
+(defn truncate-table-stmt [target-table]
+  (prepare-statement (format "truncate table %s" target-table)))
 
 (defn delete-target-stmt
   "Deletes rows, with the same primary key value(s), from target-table that will be
@@ -85,6 +88,12 @@
 (defn insert-from-staging-stmt [target-table staging-table]
   (prepare-statement (format "INSERT INTO %s SELECT * FROM %s" target-table staging-table)))
 
+(defn append-from-staging-stmt [target-table staging-table keys]
+  (let [join-columns (s/join " AND " (map #(str "s." % " = t." %) keys))
+        where-clauses (s/join " AND " (map #(str "t." % " IS NULL") keys))]
+    (prepare-statement (format "INSERT INTO %s SELECT s.* FROM %s s LEFT JOIN %s t ON %s WHERE %s" 
+      target-table staging-table target-table join-columns where-clauses))))
+
 (defn drop-table-stmt [table]
   (prepare-statement (format "DROP TABLE %s" table)))
 
@@ -93,7 +102,7 @@
     (debug (.toString statement))
     (.execute statement)))
 
-(defn load-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns] :as table-manifest}]
+(defn merge-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns strategy] :as table-manifest}]
   (let [staging-table (str table "_staging")]
     (debug "Connecting to" jdbc-url)
     (mark! redshift-imports)
@@ -103,6 +112,30 @@
                (delete-target-stmt table staging-table pk-columns)
                (insert-from-staging-stmt table staging-table)
                (drop-table-stmt staging-table)))))
+
+(defn replace-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns strategy] :as table-manifest}]
+  (debug "Connecting to" jdbc-url)
+  (mark! redshift-imports)
+  (with-connection jdbc-url
+    (execute (truncate-table-stmt table)
+             (copy-from-s3-stmt table redshift-manifest-url credentials table-manifest))))
+
+(defn append-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns strategy] :as table-manifest}]
+  (let [staging-table (str table "_staging")]
+    (debug "Connecting to" jdbc-url)
+    (mark! redshift-imports)
+    (with-connection jdbc-url
+      (execute (create-staging-table-stmt table staging-table)
+               (copy-from-s3-stmt staging-table redshift-manifest-url credentials table-manifest)
+               (append-from-staging-stmt table staging-table pk-columns)
+               (drop-table-stmt staging-table)))))
+
+(defn load-table [credentials redshift-manifest-url {strategy :strategy :as table-manifest}]
+  (print "strategy: " strategy)
+  (case (keyword strategy)
+    :merge (merge-table credentials redshift-manifest-url table-manifest)
+    :replace (replace-table credentials redshift-manifest-url table-manifest)
+    :append (append-table credentials redshift-manifest-url table-manifest)))
 
 (def importing-files (counter [(str *ns*) "importing-files" "files"]))
 (def import-timer (timer [(str *ns*) "importing-files" "time"]))
