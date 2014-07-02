@@ -5,7 +5,7 @@
             [clojure.set :refer (difference)]
             [clojure.core.async :refer (go-loop thread put! chan >!! <!! >! <! alts!! timeout close!)]
             [clojure.edn :as edn]
-            [uswitch.blueshift.util :refer (close-channels)]
+            [uswitch.blueshift.util :refer (close-channels clear-keys)]
             [schema.core :as s]
             [schema.macros :as sm]
             [metrics.counters :refer (counter inc! dec!)])
@@ -142,7 +142,7 @@
       (doseq [watcher @watchers]
         (stop watcher)
         (dec! directories-watched)))
-    (dissoc this :watchers)))
+    (clear-keys this :watchers)))
 
 (defn key-watcher-spawner [config]
   (map->KeyWatcherSpawner {:poll-interval-seconds (-> config :s3 :poll-interval :seconds)}))

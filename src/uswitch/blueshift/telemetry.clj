@@ -3,7 +3,8 @@
             [metrics.core :refer (default-registry)]
             [clojure.tools.logging :refer (info *logger-factory* debug)]
             [clojure.tools.logging.impl :refer (get-logger)]
-            [clojure.string :refer (split)])
+            [clojure.string :refer (split)]
+            [uswitch.blueshift.util :refer (clear-keys)])
   (:import [java.util.concurrent TimeUnit]
            [com.codahale.metrics Slf4jReporter]))
 
@@ -21,7 +22,7 @@
     (when-let [reporter (:reporter this)]
       (info "Stopping Slf4j metrics reporter")
       (.stop reporter))
-    (dissoc this :reporter)))
+    (clear-keys this :reporter)))
 
 (defn log-metrics-reporter [config registry]
   (map->LogMetricsReporter {:registry registry}))
