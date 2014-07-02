@@ -91,7 +91,7 @@
 (defn append-from-staging-stmt [target-table staging-table keys]
   (let [join-columns (s/join " AND " (map #(str "s." % " = t." %) keys))
         where-clauses (s/join " AND " (map #(str "t." % " IS NULL") keys))]
-    (prepare-statement (format "INSERT INTO %s SELECT s.* FROM %s s LEFT JOIN %s t ON %s WHERE %s" 
+    (prepare-statement (format "INSERT INTO %s SELECT s.* FROM %s s LEFT JOIN %s t ON %s WHERE %s"
       target-table staging-table target-table join-columns where-clauses))))
 
 (defn drop-table-stmt [table]
@@ -131,7 +131,6 @@
                (drop-table-stmt staging-table)))))
 
 (defn load-table [credentials redshift-manifest-url {strategy :strategy :as table-manifest}]
-  (print "strategy: " strategy)
   (case (keyword strategy)
     :merge (merge-table credentials redshift-manifest-url table-manifest)
     :replace (replace-table credentials redshift-manifest-url table-manifest)
