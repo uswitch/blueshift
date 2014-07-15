@@ -100,7 +100,10 @@
 (defn execute [& statements]
   (doseq [statement statements]
     (debug (.toString statement))
-    (.execute statement)))
+    (try (.execute statement)
+         (catch SQLException e
+           (error "Error executing statement:" (.toString statement))
+           (throw e)))))
 
 (defn merge-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns strategy] :as table-manifest}]
   (let [staging-table (str table "_staging")]
