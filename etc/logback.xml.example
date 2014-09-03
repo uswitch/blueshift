@@ -2,7 +2,7 @@
 <configuration scan="true" scanPeriod="10 seconds">
   <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
     <encoder>
-      <pattern>[%d{HH:mm:ss.SSS}] %-5level %logger{36} - %msg%n%ex{full}</pattern>
+      <pattern>[%d] %-5level %logger{36} - %msg%n%ex{full}</pattern>
     </encoder>
   </appender>
 
