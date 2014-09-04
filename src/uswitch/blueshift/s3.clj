@@ -1,6 +1,6 @@
 (ns uswitch.blueshift.s3
   (:require [com.stuartsierra.component :refer (Lifecycle system-map using start stop)]
-            [clojure.tools.logging :refer (info error warn debug)]
+            [clojure.tools.logging :refer (info error warn debug errorf)]
             [aws.sdk.s3 :refer (list-objects get-object delete-object)]
             [clojure.set :refer (difference)]
             [clojure.core.async :refer (go-loop thread put! chan >!! <!! >! <! alts!! timeout close!)]
@@ -155,6 +155,14 @@
 (defn key-watcher-spawner [config]
   (map->KeyWatcherSpawner {:poll-interval-seconds (-> config :s3 :poll-interval :seconds)}))
 
+(defn matching-directories [credentials bucket key-pattern]
+  (try (->> (leaf-directories credentials bucket)
+            (filter #(re-matches key-pattern %))
+            (set))
+       (catch Exception e
+         (errorf e "Error checking for matching object keys in \"%s\"" bucket)
+         #{})))
+
 (defrecord BucketWatcher [credentials bucket key-pattern poll-interval-seconds]
   Lifecycle
   (start [this]
@@ -162,17 +170,15 @@
     (let [new-directories-ch (chan)
           control-ch         (chan)]
       (thread
-       (loop [dirs nil]
-         (let [available-dirs (->> (leaf-directories credentials bucket)
-                                   (filter #(re-matches key-pattern %))
-                                   (set))
-               new-dirs       (difference available-dirs dirs)]
-           (when (seq new-dirs)
-             (info "New directories:" new-dirs "spawning" (count new-dirs) "watchers")
-             (>!! new-directories-ch new-dirs))
-           (let [[v c] (alts!! [(timeout (* 1000 poll-interval-seconds)) control-ch])]
-             (when-not (= c control-ch)
-               (recur available-dirs))))))
+        (loop [dirs nil]
+          (let [available-dirs (matching-directories credentials bucket key-pattern)
+                new-dirs       (difference available-dirs dirs)]
+            (when (seq new-dirs)
+              (info "New directories:" new-dirs "spawning" (count new-dirs) "watchers")
+              (>!! new-directories-ch new-dirs))
+            (let [[v c] (alts!! [(timeout (* 1000 poll-interval-seconds)) control-ch])]
+              (when-not (= c control-ch)
+                (recur available-dirs))))))
       (assoc this :control-ch control-ch :new-directories-ch new-directories-ch)))
   (stop [this]
     (info "Stopping BucketWatcher")
