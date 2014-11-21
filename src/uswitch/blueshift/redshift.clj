@@ -66,9 +66,9 @@
                              target-table)))
 
 (defn copy-from-s3-stmt [table manifest-url {:keys [access-key secret-key] :as creds} {:keys [columns options] :as table-manifest}]
-  (prepare-statement (format "COPY %s (%s) FROM '%s' CREDENTIALS 'aws_access_key_id=%s;aws_secret_access_key=%s' %s manifest"
+  (prepare-statement (format "COPY %s %s FROM '%s' CREDENTIALS 'aws_access_key_id=%s;aws_secret_access_key=%s' %s manifest"
                              table
-                             (s/join "," columns)
+                             (or (and (empty? columns) "") (str "(" (s/join "," columns) ")"))
                              manifest-url
                              access-key
                              secret-key
