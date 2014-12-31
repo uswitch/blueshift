@@ -1,0 +1,2 @@
+blueshift: sh -c 'cd .. && exec lein run -- --config ./etc/config.edn'
+demo: lein run -- --config ../etc/config.edn --jdbc-url ./jdbc-url.txt
