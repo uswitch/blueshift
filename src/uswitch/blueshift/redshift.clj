@@ -125,7 +125,6 @@
                (drop-table-stmt staging-table)))))
 
 (defn replace-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns strategy] :as table-manifest}]
-  (debug "Connecting to" jdbc-url)
   (mark! redshift-imports)
   (with-connection jdbc-url
     (execute (truncate-table-stmt table)
@@ -133,7 +132,6 @@
 
 (defn append-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns strategy] :as table-manifest}]
   (let [staging-table (str table "_staging")]
-    (debug "Connecting to" jdbc-url)
     (mark! redshift-imports)
     (with-connection jdbc-url
       (execute (create-staging-table-stmt table staging-table)
