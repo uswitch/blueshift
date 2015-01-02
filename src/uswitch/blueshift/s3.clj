@@ -145,7 +145,6 @@
 (defn- progress
   [{:keys [state] :as world}
    {:keys [credentials bucket directory] :as configuration}]
-  (debug "world before stepping" world)
   (case state
     :scan   (step-scan   credentials bucket directory )
     :load   (step-load   credentials bucket           (:table-manifest world) (:files world))
@@ -161,7 +160,6 @@
        (loop [timer (timeout (* poll-interval-seconds 1000))
               world {:state :scan}]
          (let [next-world (progress world configuration)]
-           (debug "next-world to step" next-world)
            (if (:pause? next-world)
              (let [[_ c] (alts!! [control-ch timer])]
                (when (not= c control-ch)

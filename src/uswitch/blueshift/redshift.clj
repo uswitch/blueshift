@@ -107,7 +107,6 @@
 
 (defn merge-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns strategy] :as table-manifest}]
   (let [staging-table (str table "_staging")]
-    (debug "Connecting to" jdbc-url)
     (mark! redshift-imports)
     (with-connection jdbc-url
       (execute (create-staging-table-stmt table staging-table)
