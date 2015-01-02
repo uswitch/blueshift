@@ -97,9 +97,18 @@
 (defn drop-table-stmt [table]
   (prepare-statement (format "DROP TABLE %s" table)))
 
+(defn- aws-censor
+  [s]
+  (->
+   s
+   (clojure.string/replace #"aws_access_key_id=[^;]*"
+                           "aws_access_key_id=***")
+   (clojure.string/replace #"aws_secret_access_key=[^;]*"
+                           "aws_secret_access_key=***")))
+
 (defn execute [& statements]
   (doseq [statement statements]
-    (debug (.toString statement))
+    (debug (aws-censor (.toString statement)))
     (try (.execute statement)
          (catch SQLException e
            (error "Error executing statement:" (.toString statement))
