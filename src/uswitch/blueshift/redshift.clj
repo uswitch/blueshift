@@ -77,13 +77,15 @@
 (defn truncate-table-stmt [target-table]
   (prepare-statement (format "truncate table %s" target-table)))
 
+
 (defn delete-target-stmt
   "Deletes rows, with the same primary key value(s), from target-table that will be
    overwritten by values in staging-table."
   [target-table staging-table keys]
-  (let [where (s/join " AND " (for [pk keys]
-                                (str target-table "." pk "=" staging-table "." pk)))]
-    (prepare-statement (format "DELETE FROM %s USING %s WHERE %s" target-table staging-table where))))
+  (let [subselect (fn [table key] (str "(select " table "." key " from " table ")"))
+        where (s/join " AND " (map #(str %1 " in " (subselect staging-table %1)) keys))
+        query (format (str "DELETE FROM %s WHERE  %s") target-table where)]
+    (prepare-statement query)))
 
 (defn insert-from-staging-stmt [target-table staging-table]
   (prepare-statement (format "INSERT INTO %s SELECT * FROM %s" target-table staging-table)))
