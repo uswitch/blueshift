@@ -78,14 +78,26 @@
   (prepare-statement (format "truncate table %s" target-table)))
 
 
+(defn delete-in-query [target-table staging-table key]
+  (format "DELETE FROM %s WHERE %s IN (SELECT %s FROM %s)" target-table key key staging-table))
+
+(defn delete-join-query
+  [target-table staging-table keys]
+  (let [where (s/join " AND " (for [pk keys] (str target-table "." pk "=" staging-table "." pk)))]
+    (format "DELETE FROM %s USING %s WHERE %s" target-table staging-table where)))
+
+(defn delete-target-query
+  "Attempts to optimise delete strategy based on keys arity. With single primary keys
+   its significantly faster to delete."
+  [target-table staging-table keys]
+  (cond (= 1 (count keys)) (delete-in-query target-table staging-table (first keys))
+        :default           (delete-join-query target-table staging-table keys)))
+
 (defn delete-target-stmt
   "Deletes rows, with the same primary key value(s), from target-table that will be
    overwritten by values in staging-table."
   [target-table staging-table keys]
-  (let [subselect (fn [table key] (str "(select " table "." key " from " table ")"))
-        where (s/join " AND " (map #(str %1 " in " (subselect staging-table %1)) keys))
-        query (format (str "DELETE FROM %s WHERE  %s") target-table where)]
-    (prepare-statement query)))
+  (prepare-statement (delete-target-query target-table staging-table keys)))
 
 (defn insert-from-staging-stmt [target-table staging-table]
   (prepare-statement (format "INSERT INTO %s SELECT * FROM %s" target-table staging-table)))
@@ -101,12 +113,9 @@
 
 (defn- aws-censor
   [s]
-  (->
-   s
-   (clojure.string/replace #"aws_access_key_id=[^;]*"
-                           "aws_access_key_id=***")
-   (clojure.string/replace #"aws_secret_access_key=[^;]*"
-                           "aws_secret_access_key=***")))
+  (-> s
+      (clojure.string/replace #"aws_access_key_id=[^;]*" "aws_access_key_id=***")
+      (clojure.string/replace #"aws_secret_access_key=[^;]*" "aws_secret_access_key=***")))
 
 (defn execute [& statements]
   (doseq [statement statements]
