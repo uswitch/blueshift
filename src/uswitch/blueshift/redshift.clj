@@ -99,8 +99,15 @@
   [target-table staging-table keys]
   (prepare-statement (delete-target-query target-table staging-table keys)))
 
-(defn insert-from-staging-stmt [target-table staging-table]
-  (prepare-statement (format "INSERT INTO %s SELECT * FROM %s" target-table staging-table)))
+(defn staging-select-statement [{:keys [staging-select] :as table-manifest} staging-table]
+  (cond
+   (string? staging-select)     (s/replace staging-select #"\{\{table\}\}" staging-table)
+   (= :distinct staging-select) (format "SELECT DISTINCT * FROM %s" staging-table)
+   :default                     (format "SELECT * FROM %s" staging-table)))
+
+(defn insert-from-staging-stmt [target-table staging-table table-manifest]
+  (let [select-statement (staging-select-statement table-manifest staging-table)]
+    (prepare-statement (format "INSERT INTO %s %s" target-table select-statement))))
 
 (defn append-from-staging-stmt [target-table staging-table keys]
   (let [join-columns (s/join " AND " (map #(str "s." % " = t." %) keys))
@@ -132,7 +139,7 @@
       (execute (create-staging-table-stmt table staging-table)
                (copy-from-s3-stmt staging-table redshift-manifest-url credentials table-manifest)
                (delete-target-stmt table staging-table pk-columns)
-               (insert-from-staging-stmt table staging-table)
+               (insert-from-staging-stmt table staging-table table-manifest)
                (drop-table-stmt staging-table)))))
 
 (defn replace-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns strategy] :as table-manifest}]

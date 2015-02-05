@@ -13,15 +13,16 @@
   (:import [java.io PushbackReader InputStreamReader]
            [org.apache.http.conn ConnectionPoolTimeoutException]))
 
-(defrecord Manifest [table pk-columns columns jdbc-url options data-pattern strategy])
+(defrecord Manifest [table pk-columns columns jdbc-url options data-pattern strategy staging-select])
 
-(def ManifestSchema {:table        s/Str
-                     :pk-columns   [s/Str]
-                     :columns      [s/Str]
-                     :jdbc-url     s/Str
-                     :strategy     s/Str
-                     :options      s/Any
-                     :data-pattern s/Regex})
+(def ManifestSchema {:table          s/Str
+                     :pk-columns     [s/Str]
+                     :columns        [s/Str]
+                     :jdbc-url       s/Str
+                     :strategy       s/Str
+                     :options        s/Any
+                     :staging-select (s/maybe (s/either s/Str s/Keyword))
+                     :data-pattern   s/Regex})
 
 (defn validate [manifest]
   (when-let [error-info (s/check ManifestSchema manifest)]
