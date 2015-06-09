@@ -151,20 +151,29 @@
     :load   (step-load   credentials bucket           (:table-manifest world) (:files world))
     :delete (step-delete credentials bucket           (:files world))))
 
-(defrecord KeyWatcher [credentials bucket directory poll-interval-seconds]
+(defrecord KeyWatcher [credentials bucket directory
+                       poll-interval-seconds
+                       poll-interval-random-seconds]
   Lifecycle
   (start [this]
     (info "Starting KeyWatcher for" (str bucket "/" directory) "polling every" poll-interval-seconds "seconds")
     (let [control-ch    (chan)
           configuration {:credentials credentials :bucket bucket :directory directory}]
       (thread
-       (loop [timer (timeout (* poll-interval-seconds 1000))
+       (loop [timer (timeout (*
+                              (+ poll-interval-seconds
+                                 (int (* (rand) (float poll-interval-random-seconds))))
+                              1000))
               world {:state :scan}]
          (let [next-world (progress world configuration)]
            (if (:pause? next-world)
              (let [[_ c] (alts!! [control-ch timer])]
                (when (not= c control-ch)
-                 (recur (timeout (* poll-interval-seconds 1000)) next-world)))
+                 (let [t (*
+                          (+ poll-interval-seconds
+                             (int (* (rand) (float poll-interval-random-seconds))))
+                          1000)]
+                   (recur (timeout t) next-world))))
              (recur timer next-world)))))
       (assoc this :watcher-control-ch control-ch)))
   (stop [this]
@@ -172,12 +181,17 @@
     (close-channels this :watcher-control-ch)))
 
 
-(defn spawn-key-watcher! [credentials bucket directory poll-interval-seconds]
-  (start (KeyWatcher. credentials bucket directory poll-interval-seconds)))
+(defn spawn-key-watcher! [credentials bucket directory
+                          poll-interval-seconds poll-interval-random-seconds]
+  (start (KeyWatcher. credentials bucket directory
+                      poll-interval-seconds
+                      poll-interval-random-seconds)))
 
 (def directories-watched (counter [(str *ns*) "directories-watched" "directories"]))
 
-(defrecord KeyWatcherSpawner [bucket-watcher poll-interval-seconds]
+(defrecord KeyWatcherSpawner [bucket-watcher
+                              poll-interval-seconds
+                              poll-interval-random-seconds]
   Lifecycle
   (start [this]
     (info "Starting KeyWatcherSpawner")
@@ -186,7 +200,10 @@
       (go-loop [dirs (<! new-directories-ch)]
         (when dirs
           (doseq [dir dirs]
-            (swap! watchers conj (spawn-key-watcher! credentials bucket dir poll-interval-seconds))
+            (swap! watchers conj (spawn-key-watcher!
+                                  credentials bucket dir
+                                  poll-interval-seconds
+                                  poll-interval-random-seconds))
             (inc! directories-watched))
           (recur (<! new-directories-ch))))
       (assoc this :watchers watchers)))
@@ -200,7 +217,9 @@
     (clear-keys this :watchers)))
 
 (defn key-watcher-spawner [config]
-  (map->KeyWatcherSpawner {:poll-interval-seconds (-> config :s3 :poll-interval :seconds)}))
+  (map->KeyWatcherSpawner
+   {:poll-interval-seconds (-> config :s3 :poll-interval :seconds)
+    :poll-interval-random-seconds (or (-> config :s3 :poll-interval :random-seconds) 0)}))
 
 (defn matching-directories [credentials bucket key-pattern]
   (try (->> (leaf-directories credentials bucket)
