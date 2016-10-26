@@ -1,0 +1,5 @@
+build:
+  test:
+    image: clojure
+    commands:
+      - lein test
