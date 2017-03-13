@@ -43,8 +43,8 @@
 
 (defn prepare-statement
   [sql]
-  (doto (.prepareStatement *current-connection* sql)
-    (let [{:keys [query-seconds]} *current-timeouts*]
+  (let [{:keys [query-seconds]} *current-timeouts*]
+    (doto (.prepareStatement *current-connection* sql)
       (.setQueryTimeout query-seconds))))
 
 (defmacro with-connection [jdbc-url & body]
