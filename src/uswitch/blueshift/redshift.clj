@@ -39,10 +39,13 @@
     (.setAutoCommit false)))
 
 (def ^{:dynamic true} *current-connection* nil)
+(def ^{:dynamic true} *current-timeouts* {:query-seconds (* 10 60)})
 
 (defn prepare-statement
   [sql]
-  (.prepareStatement *current-connection* sql))
+  (doto (.prepareStatement *current-connection* sql)
+    (let [{:keys [query-seconds]} *current-timeouts*]
+      (.setQueryTimeout query-seconds))))
 
 (defmacro with-connection [jdbc-url & body]
   `(binding [*current-connection* (connection ~jdbc-url)]

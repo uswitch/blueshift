@@ -9,3 +9,4 @@ pom.xml.asc
 /.nrepl-port
 /etc/config.edn
 /etc/logback.xml
+resources/
