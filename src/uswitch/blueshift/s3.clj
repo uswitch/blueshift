@@ -130,7 +130,10 @@
            (delete-object credentials bucket key)
            (dec! importing-files (count files))
            {:state :scan
-            :pause? true}))))
+            :pause? true})
+         (catch Throwable e
+           (error e "Failed to load files to table" (:table table-manifest) "from manifest" url)
+           {:state :scan :pause? true}))))
 
 (defn- step-delete
   [credentials bucket files]
