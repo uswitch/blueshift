@@ -47,18 +47,23 @@
     (doto (.prepareStatement *current-connection* sql)
       (.setQueryTimeout query-seconds))))
 
+(def open-connections (counter [(str *ns*) "redshift-connections" "open-connections"]))
+
 (defmacro with-connection [jdbc-url & body]
   `(binding [*current-connection* (connection ~jdbc-url)]
+     (inc! open-connections)
      (try ~@body
           (debug "COMMIT")
           (.commit *current-connection*)
           (mark! redshift-import-commits)
+          nil
           (catch SQLException e#
             (error e# "ROLLBACK")
             (mark! redshift-import-rollbacks)
             (.rollback *current-connection*)
             (throw e#))
           (finally
+            (dec! open-connections)
             (when-not (.isClosed *current-connection*)
               (.close *current-connection*))))))
 
@@ -127,13 +132,17 @@
       (clojure.string/replace #"aws_access_key_id=[^;]*" "aws_access_key_id=***")
       (clojure.string/replace #"aws_secret_access_key=[^;]*" "aws_secret_access_key=***")))
 
+(def executing-statements (counter [(str *ns*) "redshift-connections" "executing-statements"]))
+
 (defn execute [& statements]
   (doseq [statement statements]
     (debug (aws-censor (.toString statement)))
+    (inc! executing-statements)
     (try (.execute statement)
          (catch SQLException e
            (error "Error executing statement:" (.toString statement))
-           (throw e)))))
+           (throw e))
+         (finally (dec! executing-statements)))))
 
 (defn merge-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns strategy] :as table-manifest}]
   (let [staging-table (str table "_staging")]
