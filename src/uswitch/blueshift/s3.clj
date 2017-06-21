@@ -113,7 +113,6 @@
   [credentials bucket table-manifest files]
   (let [redshift-manifest  (redshift/manifest bucket files)
         {:keys [key url]}  (redshift/put-manifest credentials bucket redshift-manifest)]
-
     (info "Importing" (count files) "data files to table" (:table table-manifest) "from manifest" url)
     (debug "Importing Redshift Manifest" redshift-manifest)
     (inc! importing-files (count files))

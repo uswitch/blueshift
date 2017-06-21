@@ -4,7 +4,7 @@
             [clojure.tools.logging :refer (info error debug)]
             [clojure.string :as s]
             [com.stuartsierra.component :refer (system-map Lifecycle using)]
-            [clojure.core.async :refer (chan <!! >!! close! thread)]
+            [clojure.core.async :refer (chan <!! >!! close! thread timeout alts!!)]
             [uswitch.blueshift.util :refer (close-channels)]
             [metrics.meters :refer (mark! meter)]
             [metrics.counters :refer (inc! dec! counter)]
@@ -39,24 +39,21 @@
     (.setAutoCommit false)))
 
 (def ^{:dynamic true} *current-connection* nil)
-(def ^{:dynamic true} *current-timeouts* {:query-seconds (* 10 60)})
 
 (defn prepare-statement
   [sql]
-  (let [{:keys [query-seconds]} *current-timeouts*]
-    (doto (.prepareStatement *current-connection* sql)
-      (.setQueryTimeout query-seconds))))
+  (.prepareStatement *current-connection* sql))
 
 (def open-connections (counter [(str *ns*) "redshift-connections" "open-connections"]))
 
 (defmacro with-connection [jdbc-url & body]
   `(binding [*current-connection* (connection ~jdbc-url)]
      (inc! open-connections)
-     (try ~@body
-          (debug "COMMIT")
-          (.commit *current-connection*)
-          (mark! redshift-import-commits)
-          nil
+     (try (let [res# ~@body]
+            (debug "COMMIT")
+            (.commit *current-connection*)
+            (mark! redshift-import-commits)
+            res#)
           (catch SQLException e#
             (error e# "ROLLBACK")
             (mark! redshift-import-rollbacks)
@@ -134,17 +131,37 @@
 
 (def executing-statements (counter [(str *ns*) "redshift-connections" "executing-statements"]))
 
-(defn execute [& statements]
-  (doseq [statement statements]
-    (debug (aws-censor (.toString statement)))
+(defn- execute*
+  "Will return a map with error details if the statement fails"
+  [statement millis]
+  (try
     (inc! executing-statements)
-    (try (.execute statement)
-         (catch SQLException e
-           (error "Error executing statement:" (.toString statement))
-           (throw e))
-         (finally (dec! executing-statements)))))
+    (.execute statement)
+    (dec! executing-statements)
+    nil
+    (catch SQLException e
+      (dec! executing-statements)
+      (error "error executing statement: " (.toString statement))
+      {:cause     :sql-exception
+       :statement (.toString statement)
+       :message   (.getMessage e)})))
 
-(defn merge-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns strategy] :as table-manifest}]
+(defn execute
+  "Executes statements in the order specified. Will throw an exception if the statement
+   fails or the timeout is triggered."
+  [{:keys [timeout-millis] :or {timeout-millis (* 1000 60 5)}} & statements]
+  (loop [statements statements]
+    (when-let [statement (first statements)]
+      (let [result-ch (thread (execute* statement timeout-millis))
+            timeout-ch (timeout timeout-millis)
+            [v ch] (alts!! [result-ch timeout-ch])]
+        (cond (and (= ch result-ch)
+                   (not (nil? v)))  (throw (ex-info "error during execute" v))
+              (= ch timeout-ch)     (do (error "timeout during statement, canceling")
+                                        (.cancel statement))
+              :else (recur (rest statements)))))))
+
+(defn merge-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns strategy execute-opts] :as table-manifest}]
   (let [staging-table (str table "_staging")]
     (mark! redshift-imports)
     (with-connection jdbc-url
@@ -154,13 +171,13 @@
                (insert-from-staging-stmt table staging-table table-manifest)
                (drop-table-stmt staging-table)))))
 
-(defn replace-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns strategy] :as table-manifest}]
+(defn replace-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns strategy execute-opts] :as table-manifest}]
   (mark! redshift-imports)
   (with-connection jdbc-url
     (execute (truncate-table-stmt table)
              (copy-from-s3-stmt table redshift-manifest-url credentials table-manifest))))
 
-(defn append-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns strategy] :as table-manifest}]
+(defn append-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns strategy execute-opts] :as table-manifest}]
   (let [staging-table (str table "_staging")]
     (mark! redshift-imports)
     (with-connection jdbc-url
