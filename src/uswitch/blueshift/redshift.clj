@@ -157,8 +157,13 @@
             [v ch] (alts!! [result-ch timeout-ch])]
         (cond (and (= ch result-ch)
                    (not (nil? v)))  (throw (ex-info "error during execute" v))
-              (= ch timeout-ch)     (do (error "timeout during statement, canceling")
-                                        (.cancel statement))
+              (= ch timeout-ch) (do (println "timeout during statement,
+canceling")
+                                    (.cancel statement)
+                                    (throw (ex-info "timeout during execution"
+                                                    {:cause     :timeout
+                                                     :statement (.toString statement)
+                                                     :millis    timeout-millis})))
               :else (recur (rest statements)))))))
 
 (defn merge-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns strategy execute-opts] :as table-manifest}]
