@@ -1,0 +1,3 @@
+FROM clojure:lein
+
+COPY project.clj src/ /build

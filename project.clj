@@ -1,6 +1,3 @@
-(.mkdir (java.io.File. "./resources"))
-(spit "./resources/BUILD_NUMBER" (or (System/getenv "BUILD_NUMBER") "-1"))
-
 (defproject blueshift "0.1.0-SNAPSHOT"
   :description "Automate importing S3 data into Amazon Redshift"
   :url "https://github.com/uswitch/blueshift"

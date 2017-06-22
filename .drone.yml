@@ -3,3 +3,15 @@ pipeline:
     image: clojure
     commands:
       - lein test
+  
+  build:
+    commands:
+      - docker run -v $(pwd):/app clojure:lein bash -c "cd /app && lein uberjar"
+      - git clone git://github.com/uswitch/blueshift-statsd-metrics.git metrics
+      - cd metrics && lein uberjar && cp -pr target/blueshift-statsd-metrics-0.1.0-SNAPSHOT-standalone.jar ../target/
+
+  docker:
+    image: plugins/docker
+    repo: uswitch/blueshift
+    tags:
+      - "${DRONE_COMMIT_SHA:0:8}"
