@@ -170,7 +170,8 @@ canceling")
   (let [staging-table (str table "_staging")]
     (mark! redshift-imports)
     (with-connection jdbc-url
-      (execute (create-staging-table-stmt table staging-table)
+      (execute execute-opts
+               (create-staging-table-stmt table staging-table)
                (copy-from-s3-stmt staging-table redshift-manifest-url credentials table-manifest)
                (delete-target-stmt table staging-table pk-columns)
                (insert-from-staging-stmt table staging-table table-manifest)
@@ -179,14 +180,16 @@ canceling")
 (defn replace-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns strategy execute-opts] :as table-manifest}]
   (mark! redshift-imports)
   (with-connection jdbc-url
-    (execute (truncate-table-stmt table)
+    (execute execute-opts
+             (truncate-table-stmt table)
              (copy-from-s3-stmt table redshift-manifest-url credentials table-manifest))))
 
 (defn append-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns strategy execute-opts] :as table-manifest}]
   (let [staging-table (str table "_staging")]
     (mark! redshift-imports)
     (with-connection jdbc-url
-      (execute (create-staging-table-stmt table staging-table)
+      (execute execute-opts
+               (create-staging-table-stmt table staging-table)
                (copy-from-s3-stmt staging-table redshift-manifest-url credentials table-manifest)
                (append-from-staging-stmt table staging-table pk-columns)
                (drop-table-stmt staging-table)))))
