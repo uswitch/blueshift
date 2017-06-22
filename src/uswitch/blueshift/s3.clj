@@ -130,8 +130,10 @@
            (dec! importing-files (count files))
            {:state :scan
             :pause? true})
-         (catch Throwable e
-           (error e "Failed to load files to table" (:table table-manifest) "from manifest" url)
+         (catch Exception e
+           (if-let [m (ex-data e)]
+             (error e "Failed to load files to table" (:table table-manifest) ": " (pr-str m))
+             (error e "Failed to load files to table" (:table table-manifest) "from manifest" url))
            {:state :scan :pause? true}))))
 
 (defn- step-delete
