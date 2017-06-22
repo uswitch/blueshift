@@ -146,6 +146,8 @@
        :statement (.toString statement)
        :message   (.getMessage e)})))
 
+(def timeouts (meter [(str *ns*) "redshift-connections" "statement-timeouts"]))
+
 (defn execute
   "Executes statements in the order specified. Will throw an exception if the statement
    fails or the timeout is triggered."
@@ -159,6 +161,7 @@
                    (not (nil? v)))  (throw (ex-info "error during execute" v))
               (= ch timeout-ch) (do (println "timeout during statement,
 canceling")
+                                    (mark! timeouts)
                                     (.cancel statement)
                                     (throw (ex-info "timeout during execution"
                                                     {:cause     :timeout
