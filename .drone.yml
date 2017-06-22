@@ -1,4 +1,4 @@
-build:
+pipeline:
   test:
     image: clojure
     commands:
