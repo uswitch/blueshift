@@ -12,7 +12,7 @@
      (uncaughtException [_ thread e]
        (error "Unhanled exception in thread " (str thread))
        (error e)
-       (error "Caucht unhandled exception! Stopping system and terminating!")
+       (error "Caught unhandled exception! Stopping system and terminating!")
        (stop system)
        (System/exit 2)))))
 
