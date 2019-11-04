@@ -23,8 +23,7 @@
                    :jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"
                               "-Dorg.slf4j.simpleLogger.log.org.apache.http=info"
                               "-Dorg.slf4j.simpleLogger.log.com.amazonaws=info"
-                              "-Dorg.slf4j.simpleLogger.log.com.codahale=debug"]
-                   :resource-paths ["/Users/paul/Work/uswitch/blueshift-riemann-metrics/target/blueshift-riemann-metrics-0.1.0-SNAPSHOT-standalone.jar"]}
+                              "-Dorg.slf4j.simpleLogger.log.com.codahale=debug"]}
              :uberjar {:aot [uswitch.blueshift.main]
                        :dependencies [[ch.qos.logback/logback-classic "1.1.2"]]}}
   :main uswitch.blueshift.main)
