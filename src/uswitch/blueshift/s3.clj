@@ -40,6 +40,7 @@
           (recur next-marker (concat results objects)))))))
 
 (defn files [credentials bucket directory]
+  (info (format "S3: fetching files for S3://%s/%s" bucket directory))
   (listing credentials bucket :prefix directory))
 
 (defn directories
@@ -73,6 +74,7 @@
   (letfn [(manifest? [{:keys [key]}]
             (re-matches #".*manifest\.edn$" key))]
     (when-let [manifest-file-key (:key (first (filter manifest? files)))]
+      (info (format "Loading manifest %s" manifest-file-key))
       (with-open [content (:content (get-object credentials bucket manifest-file-key))]
         (-> (read-edn content)
             (map->Manifest)
