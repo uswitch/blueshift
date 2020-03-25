@@ -1,14 +1,15 @@
 (ns uswitch.blueshift.redshift
-  (:require [aws.sdk.s3 :refer (put-object delete-object)]
+  (:require [amazonica.aws.s3 :refer (put-object)]
             [cheshire.core :refer (generate-string)]
             [clojure.tools.logging :refer (info error debug)]
             [clojure.string :as s]
-            [com.stuartsierra.component :refer (system-map Lifecycle using)]
+            ;[com.stuartsierra.component :refer (system-map Lifecycle using)]
             [clojure.core.async :refer (chan <!! >!! close! thread timeout alts!!)]
-            [uswitch.blueshift.util :refer (close-channels)]
+            ;[uswitch.blueshift.util :refer (close-channels)]
             [metrics.meters :refer (mark! meter)]
             [metrics.counters :refer (inc! dec! counter)]
-            [metrics.timers :refer (timer time!)])
+            #_[metrics.timers :refer (timer time!)]
+            )
   (:import [java.util UUID]
            [java.sql DriverManager SQLException]))
 
@@ -154,13 +155,15 @@
   [{:keys [timeout-millis] :or {timeout-millis (* 1000 60 5)}} & statements]
   (loop [statements statements]
     (when-let [statement (first statements)]
-      (let [result-ch (thread (execute* statement timeout-millis))
+      (let [result-ch (thread
+                        (info statement)
+                        ;(execute* statement timeout-millis)
+                        )
             timeout-ch (timeout timeout-millis)
             [v ch] (alts!! [result-ch timeout-ch])]
         (cond (and (= ch result-ch)
                    (not (nil? v)))  (throw (ex-info "error during execute" v))
-              (= ch timeout-ch) (do (println "timeout during statement,
-canceling")
+              (= ch timeout-ch) (do (println "timeout during statement, canceling")
                                     (mark! timeouts)
                                     (.cancel statement)
                                     (throw (ex-info "timeout during execution"

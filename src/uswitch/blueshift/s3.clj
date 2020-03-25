@@ -1,7 +1,9 @@
 (ns uswitch.blueshift.s3
   (:require [com.stuartsierra.component :refer (Lifecycle system-map using start stop)]
             [clojure.tools.logging :refer (info error warn debug errorf)]
-            [aws.sdk.s3 :refer (list-objects get-object delete-object)]
+            ;[aws.sdk.s3 :refer (list-objects get-object ;delete-object
+            ;                                 )]
+            [amazonica.aws.s3 :refer [list-objects-v2 get-object]]
             [clojure.set :refer (difference)]
             [clojure.core.async :refer (go-loop thread put! chan >!! <!! >! <! alts!! timeout close!)]
             [clojure.edn :as edn]
@@ -14,6 +16,23 @@
            [org.apache.http.conn ConnectionPoolTimeoutException]))
 
 (defrecord Manifest [table pk-columns columns jdbc-url options data-pattern strategy staging-select])
+
+(defn delete-object
+  [args]
+  (info "DEL obj " args))
+
+(defn list-objects
+  [credentials bucket options]
+  (list-objects-v2
+    (merge
+      {:bucket-name bucket}
+      options)))
+
+(comment
+
+  (list-objects nil "uswitch-blueshift" {:delimiter "/" :prefix ""})
+
+  )
 
 (def ManifestSchema {:table          s/Str
                      :pk-columns     [s/Str]
