@@ -25,3 +25,17 @@
       (let [system (build-system (read-string (slurp config)))]
         (start system)
         (wait!)))))
+
+(comment
+  
+  (def system
+    (atom
+      (build-system {:s3 {:bucket        "uswitch-blueshift"
+                          :key-pattern   "production/insight-load/.*"
+                          :poll-interval {:seconds 10}}})))
+
+  (prn system)
+  (swap! system start)
+  
+  
+  )
