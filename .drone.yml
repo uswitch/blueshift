@@ -16,12 +16,14 @@ pipeline:
   fetch-blueshift-statsd-metrics:
     when:
       event: push
+      branch: master
     image: alpine/git
     commands:
       - git clone git://github.com/uswitch/blueshift-statsd-metrics.git metrics
 
   build-blueshift-statsd-metrics:
     when:
+      branch: master
       event: push
     image: clojure
     commands:
