@@ -1,25 +1,36 @@
 pipeline:
   test:
+    when:
+      event: push
     image: clojure
     commands:
       - lein test
 
   build-blueshift:
+    when:
+      event: push
     image: clojure
     commands:
       - lein uberjar
 
   fetch-blueshift-statsd-metrics:
+    when:
+      event: push
     image: alpine/git
     commands:
       - git clone git://github.com/uswitch/blueshift-statsd-metrics.git metrics
 
   build-blueshift-statsd-metrics:
+    when:
+      event: push
     image: clojure
     commands:
       - cd metrics && lein uberjar && cp -pr target/blueshift-statsd-metrics-0.1.0-SNAPSHOT-standalone.jar ../target/blueshift-statsd-metrics.jar
 
-  docker:
+  publish:
+    when:
+      branch: master
+      event: push
     image: plugins/docker
     repo: uswitch/blueshift
     tags:
