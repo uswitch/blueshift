@@ -4,11 +4,21 @@ pipeline:
     commands:
       - lein test
 
-  build:
+  build-blueshift:
     image: clojure
     commands:
       - lein uberjar
       - git clone git://github.com/uswitch/blueshift-statsd-metrics.git metrics
+      - cd metrics && lein uberjar && cp -pr target/blueshift-statsd-metrics-0.1.0-SNAPSHOT-standalone.jar ../target/blueshift-statsd-metrics.jar
+
+  fetch-blueshift-statsd-metrics:
+    image: alpine/git
+    commands:
+      - git clone git://github.com/uswitch/blueshift-statsd-metrics.git metrics
+
+  build-blueshift-statsd-metrics:
+    image: clojure
+    commands:
       - cd metrics && lein uberjar && cp -pr target/blueshift-statsd-metrics-0.1.0-SNAPSHOT-standalone.jar ../target/blueshift-statsd-metrics.jar
 
   docker:
