@@ -1,16 +1,14 @@
 (ns uswitch.blueshift.redshift
   (:require [amazonica.aws.s3 :refer (put-object)]
-            [cheshire.core :refer (generate-string)]
+            [cheshire.core :as json]
             [clojure.tools.logging :refer (info error debug)]
             [clojure.string :as s]
-            ;[com.stuartsierra.component :refer (system-map Lifecycle using)]
             [clojure.core.async :refer (chan <!! >!! close! thread timeout alts!!)]
-            ;[uswitch.blueshift.util :refer (close-channels)]
             [metrics.meters :refer (mark! meter)]
-            [metrics.counters :refer (inc! dec! counter)]
-            #_[metrics.timers :refer (timer time!)]
-            )
+            [metrics.counters :refer (inc! dec! counter)])
   (:import [java.util UUID]
+           [java.io ByteArrayInputStream]
+           [com.amazonaws.auth DefaultAWSCredentialsProviderChain]
            [java.sql DriverManager SQLException]))
 
 
@@ -21,10 +19,11 @@
 (defn put-manifest
   "Uploads the manifest to S3 as JSON, returns the URL to the uploaded object.
    Manifest should be generated with uswitch.blueshift.redshift/manifest."
-  [credentials bucket manifest]
-  (let [file-name (str (UUID/randomUUID) ".manifest")
-        s3-url (str "s3://" bucket "/" file-name)]
-    (put-object credentials bucket file-name (generate-string manifest))
+  [bucket manifest]
+  (let [file-name      (str (UUID/randomUUID) ".manifest")
+        s3-url         (str "s3://" bucket "/" file-name)
+        manifest-bytes (.getBytes (json/generate-string manifest))]
+    (put-object :bucket-name bucket :key file-name :input-stream (ByteArrayInputStream. manifest-bytes))
     {:key file-name
      :url s3-url}))
 
@@ -71,14 +70,19 @@
                              staging-table
                              target-table)))
 
-(defn copy-from-s3-stmt [table manifest-url {:keys [access-key secret-key] :as creds} {:keys [columns options] :as table-manifest}]
-  (prepare-statement (format "COPY %s (%s) FROM '%s' CREDENTIALS 'aws_access_key_id=%s;aws_secret_access_key=%s' %s manifest"
-                             table
-                             (s/join "," columns)
-                             manifest-url
-                             access-key
-                             secret-key
-                             (s/join " " options))))
+(def credentials-chain (DefaultAWSCredentialsProviderChain. ))
+
+(defn copy-from-s3-stmt [table manifest-url {:keys [columns options] :as table-manifest}]
+  (let [credentials (.getCredentials credentials-chain)
+        access-key  (.getAWSAccessKeyId credentials)
+        secret-key  (.getAWSSecretKey credentials)]
+    (prepare-statement (format "COPY %s (%s) FROM '%s' CREDENTIALS 'aws_access_key_id=%s;aws_secret_access_key=%s' %s manifest"
+                               table
+                               (s/join "," columns)
+                               manifest-url
+                               access-key
+                               secret-key
+                               (s/join " " options)))))
 
 (defn truncate-table-stmt [target-table]
   (prepare-statement (format "truncate table %s" target-table)))
@@ -155,10 +159,7 @@
   [{:keys [timeout-millis] :or {timeout-millis (* 1000 60 5)}} & statements]
   (loop [statements statements]
     (when-let [statement (first statements)]
-      (let [result-ch (thread
-                        (info statement)
-                        ;(execute* statement timeout-millis)
-                        )
+      (let [result-ch (thread (execute* statement timeout-millis))
             timeout-ch (timeout timeout-millis)
             [v ch] (alts!! [result-ch timeout-ch])]
         (cond (and (= ch result-ch)
@@ -172,36 +173,36 @@
                                                      :millis    timeout-millis})))
               :else (recur (rest statements)))))))
 
-(defn merge-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns strategy execute-opts] :as table-manifest}]
+(defn merge-table [redshift-manifest-url {:keys [table jdbc-url pk-columns strategy execute-opts] :as table-manifest}]
   (let [staging-table (str table "_staging")]
     (mark! redshift-imports)
     (with-connection jdbc-url
       (execute execute-opts
                (create-staging-table-stmt table staging-table)
-               (copy-from-s3-stmt staging-table redshift-manifest-url credentials table-manifest)
+               (copy-from-s3-stmt staging-table redshift-manifest-url table-manifest)
                (delete-target-stmt table staging-table pk-columns)
                (insert-from-staging-stmt table staging-table table-manifest)
                (drop-table-stmt staging-table)))))
 
-(defn replace-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns strategy execute-opts] :as table-manifest}]
+(defn replace-table [redshift-manifest-url {:keys [table jdbc-url pk-columns strategy execute-opts] :as table-manifest}]
   (mark! redshift-imports)
   (with-connection jdbc-url
     (execute execute-opts
              (truncate-table-stmt table)
-             (copy-from-s3-stmt table redshift-manifest-url credentials table-manifest))))
+             (copy-from-s3-stmt table redshift-manifest-url table-manifest))))
 
-(defn append-table [credentials redshift-manifest-url {:keys [table jdbc-url pk-columns strategy execute-opts] :as table-manifest}]
+(defn append-table [redshift-manifest-url {:keys [table jdbc-url pk-columns strategy execute-opts] :as table-manifest}]
   (let [staging-table (str table "_staging")]
     (mark! redshift-imports)
     (with-connection jdbc-url
       (execute execute-opts
                (create-staging-table-stmt table staging-table)
-               (copy-from-s3-stmt staging-table redshift-manifest-url credentials table-manifest)
+               (copy-from-s3-stmt staging-table redshift-manifest-url table-manifest)
                (append-from-staging-stmt table staging-table pk-columns)
                (drop-table-stmt staging-table)))))
 
-(defn load-table [credentials redshift-manifest-url {strategy :strategy :as table-manifest}]
+(defn load-table [redshift-manifest-url {strategy :strategy :as table-manifest}]
   (case (keyword strategy)
-    :merge (merge-table credentials redshift-manifest-url table-manifest)
-    :replace (replace-table credentials redshift-manifest-url table-manifest)
-    :append (append-table credentials redshift-manifest-url table-manifest)))
+    :merge (merge-table redshift-manifest-url table-manifest)
+    :replace (replace-table redshift-manifest-url table-manifest)
+    :append (append-table redshift-manifest-url table-manifest)))
