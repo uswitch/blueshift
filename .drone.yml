@@ -33,6 +33,7 @@ pipeline:
     when:
       branch: master
       event: push
+    secrets: ["docker_username","docker_email", "docker_password"]
     image: plugins/docker
     repo: uswitch/blueshift
     tags:
