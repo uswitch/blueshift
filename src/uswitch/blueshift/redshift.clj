@@ -73,15 +73,17 @@
 (def credentials-chain (DefaultAWSCredentialsProviderChain. ))
 
 (defn copy-from-s3-stmt [table manifest-url {:keys [columns options] :as table-manifest}]
-  (let [credentials (.getCredentials credentials-chain)
-        access-key  (.getAWSAccessKeyId credentials)
-        secret-key  (.getAWSSecretKey credentials)]
-    (prepare-statement (format "COPY %s (%s) FROM '%s' CREDENTIALS 'aws_access_key_id=%s;aws_secret_access_key=%s' %s manifest"
+  (let [permission (if-let [iam-role (System/getenv "BLUESHIFT_S3_IAM_ROLE")]
+                     (format "IAM_ROLE '%s'" iam-role)
+                     (let [credentials (.getCredentials credentials-chain)
+                           access-key  (.getAWSAccessKeyId credentials)
+                           secret-key  (.getAWSSecretKey credentials)]
+                       (format "CREDENTIALS 'aws_access_key_id=%s;aws_secret_access_key=%s'" access-key secret-key)))]
+    (prepare-statement (format "COPY %s (%s) FROM '%s' %s %s manifest"
                                table
                                (s/join "," columns)
                                manifest-url
-                               access-key
-                               secret-key
+                               permission
                                (s/join " " options)))))
 
 (defn truncate-table-stmt [target-table]
