@@ -9,7 +9,7 @@
                  [org.clojure/core.async "1.0.567"]
                  [org.clojure/tools.cli "1.0.194"]
                  ;[clj-aws-s3 "0.3.9" :exclusions [commons-logging commons-codec joda-time]] ; TODO delete
-                 [amazonica "0.3.152"]
+                 [amazonica "0.3.156"]
                  [joda-time "2.10.5"]
                  [commons-codec "1.14"]
                  [org.slf4j/jcl-over-slf4j "1.7.30"]
